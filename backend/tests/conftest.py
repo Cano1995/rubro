@@ -39,7 +39,12 @@ async def client():
 
     async def override_get_db():
         async with Session() as db:
-            yield db
+            try:
+                yield db
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
 
     app_module.app.dependency_overrides[get_db] = override_get_db
 
