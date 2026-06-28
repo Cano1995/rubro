@@ -2,16 +2,22 @@
 Fixtures globales para tests de integración.
 Usa PostgreSQL real — no mocks.
 
-Diseño: cada test recrea el schema con SQL puro (DROP SCHEMA CASCADE / CREATE
-SCHEMA), evitando completamente las consultas a pg_catalog que hacen que
-asyncpg lance InterfaceError. create_all usa checkfirst=False porque el
-schema ya está vacío. Sin teardown drop — el próximo test lo resetea.
+Diseño (importante):
+  El problema raíz es que pytest-asyncio ejecuta los fixtures async en un
+  event loop distinto al de los tests. Si creamos conexiones asyncpg en el
+  fixture y luego las reusamos en el test, asyncpg lanza:
+      "Future attached to a different loop"
+
+  Solución: gestionar el schema con psycopg2 (sync, sin event loop) para que
+  el pool de conexiones asyncpg no tenga ninguna conexión previa cuando el
+  test empieza. La primera conexión asyncpg se crea DENTRO del test (en el
+  event loop correcto), no en el fixture.
 """
 import os
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy import text
+from sqlalchemy import create_engine as _sync_engine, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from httpx import AsyncClient, ASGITransport
 
 from app.core.database import Base, get_db
 import main as app_module
@@ -22,27 +28,35 @@ TEST_DATABASE_URL = os.getenv(
     "postgresql+asyncpg://rubro:rubro_dev@localhost:5432/rubro_test",
 )
 
+# psycopg2 URL (driver sync)
+_SYNC_URL = TEST_DATABASE_URL.replace("+asyncpg", "+psycopg2")
+
+
+def _reset_schema() -> None:
+    """Drop + recreate schema y crea tablas — puro psycopg2, sin event loop."""
+    eng = _sync_engine(_SYNC_URL, isolation_level="AUTOCOMMIT")
+    with eng.connect() as conn:
+        conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        conn.execute(text("CREATE SCHEMA public"))
+    eng.dispose()
+
+    eng2 = _sync_engine(_SYNC_URL)
+    Base.metadata.create_all(eng2, checkfirst=False)
+    eng2.dispose()
+
 
 @pytest_asyncio.fixture
 async def client():
     """
-    HTTP client por test.
-
-    Resetea el schema con SQL puro (sin pg_catalog introspection) y crea
-    las tablas con checkfirst=False. La dependencia get_db genera sesiones
-    propias que commiten igual que en producción.
+    HTTP client con schema limpio.
+    El pool asyncpg queda vacío al crear el fixture — la primera
+    conexión asyncpg la crea el test mismo (en su propio event loop).
     """
+    # Schema reset SYNC — no toca asyncpg ni el event loop del fixture
+    _reset_schema()
+
+    # Engine async vacío: no se abre ninguna conexión aquí
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
-
-    # Reset schema limpio — evita run_sync(drop_all) que usa pg_catalog
-    async with engine.begin() as conn:
-        await conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
-        await conn.execute(text("CREATE SCHEMA public"))
-
-    # Crear tablas sin introspección (schema vacío, checkfirst innecesario)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all, checkfirst=False)
-
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async def override_get_db():
@@ -64,7 +78,6 @@ async def client():
 
     app_module.app.dependency_overrides.clear()
     await engine.dispose()
-    # No hace falta DROP aquí — el próximo setUp ya hace DROP SCHEMA CASCADE
 
 
 async def login(client: AsyncClient, email: str, password: str = "Test1234!") -> str:

@@ -5,11 +5,11 @@ from sqlalchemy import select
 from app.core.database import get_db
 from app.core.security import decode_token
 
-bearer_scheme = HTTPBearer()
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ):
     from app.models.usuario import Usuario
@@ -19,6 +19,8 @@ async def get_current_user(
         detail="No se pudo validar las credenciales",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    if credentials is None:
+        raise exc
     try:
         payload = decode_token(credentials.credentials)
         user_id: str = payload.get("sub")
