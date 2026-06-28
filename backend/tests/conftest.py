@@ -2,18 +2,21 @@
 Fixtures globales para tests de integración.
 Usa PostgreSQL real — no mocks.
 
-Diseño (importante):
-  El problema raíz es que pytest-asyncio ejecuta los fixtures async en un
-  event loop distinto al de los tests. Si creamos conexiones asyncpg en el
-  fixture y luego las reusamos en el test, asyncpg lanza:
-      "Future attached to a different loop"
+Diseño:
+  pytest-asyncio 0.24.0 crea un event loop nuevo por cada test function, pero
+  los fixtures async pueden correr en un loop diferente al del test. Esto hace
+  que asyncpg lance "Future attached to a different loop" cuando el pool
+  reutiliza conexiones entre el fixture y el test.
 
-  Solución: gestionar el schema con psycopg2 (sync, sin event loop) para que
-  el pool de conexiones asyncpg no tenga ninguna conexión previa cuando el
-  test empieza. La primera conexión asyncpg se crea DENTRO del test (en el
-  event loop correcto), no en el fixture.
+  Soluciones combinadas:
+  1. `event_loop` fixture session-scoped — fuerza un único loop para todo
+     (deprecated en 0.21+ pero funcional en 0.24.0).
+  2. psycopg2 para schema reset — evita crear conexiones asyncpg en el
+     fixture setup (que corren antes del primer test).
 """
+import asyncio
 import os
+import pytest
 import pytest_asyncio
 from sqlalchemy import create_engine as _sync_engine, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -28,12 +31,29 @@ TEST_DATABASE_URL = os.getenv(
     "postgresql+asyncpg://rubro:rubro_dev@localhost:5432/rubro_test",
 )
 
-# psycopg2 URL (driver sync)
 _SYNC_URL = TEST_DATABASE_URL.replace("+asyncpg", "+psycopg2")
 
 
+# ─── Event loop session-scoped ───────────────────────────────────────────────
+
+@pytest.fixture(scope="session")
+def event_loop():
+    """
+    Único event loop para toda la sesión de tests.
+    Evita 'Future attached to a different loop' cuando los fixtures async
+    crean conexiones asyncpg que luego son reutilizadas por los tests.
+    Deprecated en pytest-asyncio >=0.21, pero funcional en 0.24.0.
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    yield loop
+    loop.close()
+
+
+# ─── Schema sync (psycopg2) ──────────────────────────────────────────────────
+
 def _reset_schema() -> None:
-    """Drop + recreate schema y crea tablas — puro psycopg2, sin event loop."""
+    """Drop + recreate schema y crea tablas — puro psycopg2, sin asyncpg."""
     eng = _sync_engine(_SYNC_URL, isolation_level="AUTOCOMMIT")
     with eng.connect() as conn:
         conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
@@ -45,17 +65,13 @@ def _reset_schema() -> None:
     eng2.dispose()
 
 
+# ─── HTTP client fixture ──────────────────────────────────────────────────────
+
 @pytest_asyncio.fixture
 async def client():
-    """
-    HTTP client con schema limpio.
-    El pool asyncpg queda vacío al crear el fixture — la primera
-    conexión asyncpg la crea el test mismo (en su propio event loop).
-    """
-    # Schema reset SYNC — no toca asyncpg ni el event loop del fixture
+    """HTTP client con schema limpio, sesiones DB propias por request."""
     _reset_schema()
 
-    # Engine async vacío: no se abre ninguna conexión aquí
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -80,6 +96,8 @@ async def client():
     await engine.dispose()
 
 
+# ─── Helper de login ─────────────────────────────────────────────────────────
+
 async def login(client: AsyncClient, email: str, password: str = "Test1234!") -> str:
     resp = await client.post(
         "/auth/login",
@@ -89,6 +107,8 @@ async def login(client: AsyncClient, email: str, password: str = "Test1234!") ->
     assert resp.status_code == 200, f"Login failed ({email}): {resp.text}"
     return resp.json()["access_token"]
 
+
+# ─── Setup fixtures ───────────────────────────────────────────────────────────
 
 @pytest_asyncio.fixture
 async def vet_setup(client):
