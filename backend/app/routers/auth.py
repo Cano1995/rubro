@@ -34,9 +34,8 @@ class RegisterIn(BaseModel):
     apellido: str
     email: EmailStr
     password: str
-    # nombre de la organización (para primer usuario = org_admin)
     org_nombre: str
-    org_rubro: str   # veterinaria | belleza | roperia
+    rubro: str          # veterinaria | belleza | roperia
     org_ruc: str | None = None
 
 
@@ -62,7 +61,7 @@ async def register(data: RegisterIn, db: AsyncSession = Depends(get_db)):
 
     # Validar rubro
     try:
-        rubro = RubroNegocio(data.org_rubro)
+        rubro = RubroNegocio(data.rubro)
     except ValueError:
         raise HTTPException(400, f"Rubro inválido. Opciones: {[r.value for r in RubroNegocio]}")
 
