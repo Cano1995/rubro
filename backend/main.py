@@ -29,6 +29,9 @@ from app.routers.roperia import productos as rop_productos
 from app.routers.roperia import categorias as rop_categorias
 from app.routers.roperia import ventas as rop_ventas
 
+# Reportes
+from app.routers import reportes
+
 # Para agregar un nuevo módulo:
 # 1. from app.routers.<rubro> import ...
 # 2. app.include_router(...)
@@ -110,6 +113,9 @@ app.include_router(bel_staff.router)
 app.include_router(rop_categorias.router)
 app.include_router(rop_productos.router)
 app.include_router(rop_ventas.router)
+
+# --- Reportes ---
+app.include_router(reportes.router)
 
 
 @app.get("/health")

@@ -32,6 +32,9 @@ import RopProductos from './pages/roperia/Productos'
 import RopVentas from './pages/roperia/Ventas'
 import RopCategorias from './pages/roperia/Categorias'
 
+// Reportes
+import Reportes from './pages/Reportes'
+
 // Admin
 import AdminPanel from './pages/admin/Panel'
 
@@ -87,6 +90,7 @@ function AppShell() {
             <Route path="/roperia/categorias" element={<RopCategorias />} />
 
             {/* Base */}
+            <Route path="/reportes" element={<Reportes />} />
             <Route path="/configuracion" element={<Configuracion />} />
 
             {/* Superadmin */}
