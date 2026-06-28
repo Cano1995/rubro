@@ -1,19 +1,16 @@
 """
 Fixtures globales para tests de integración.
 Usa PostgreSQL real — no mocks.
-Requiere: TEST_DATABASE_URL en el entorno.
 
-Diseño: cada test recibe un AsyncClient con su PROPIA fábrica de sesiones
-(cada request HTTP genera una sesión nueva y la cierra al terminar).
-No se comparte ninguna sesión entre fixtures — así evitamos el
-InterfaceError de asyncpg por operaciones concurrentes en la misma conexión.
-Entre test y test, un fixture autouse trunca todas las tablas.
+Diseño: cada test tiene su propio engine (drop+create schema) en su propio
+event loop. Elimina el problema "Future attached to a different loop" que
+ocurre cuando un engine session-scoped se usa desde function-scoped tests.
+El overhead de recrear el schema es ~100ms por test y es aceptable.
 """
 import os
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
 from app.core.database import Base, get_db
@@ -26,42 +23,19 @@ TEST_DATABASE_URL = os.getenv(
 )
 
 
-# ─── Engine (session-scoped) ────────────────────────────────────────────────
-
-@pytest_asyncio.fixture(scope="session")
-async def test_engine():
+@pytest_asyncio.fixture
+async def client():
+    """
+    Fixture principal: crea engine propio, recrea schema y devuelve un
+    AsyncClient ya configurado. Todo en el mismo event loop del test.
+    """
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
-    yield engine
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await engine.dispose()
 
-
-# ─── Limpieza entre tests ────────────────────────────────────────────────────
-
-@pytest_asyncio.fixture(autouse=True)
-async def clean_tables(test_engine):
-    """Trunca todas las tablas DESPUÉS de cada test (orden inverso de FK)."""
-    yield
-    async with test_engine.begin() as conn:
-        names = ", ".join(
-            f'"{t.name}"' for t in reversed(Base.metadata.sorted_tables)
-        )
-        await conn.execute(text(f"TRUNCATE TABLE {names} RESTART IDENTITY CASCADE"))
-
-
-# ─── HTTP client con sesiones propias ────────────────────────────────────────
-
-@pytest_asyncio.fixture
-async def client(test_engine):
-    """
-    AsyncClient cuya dependencia get_db genera una AsyncSession NUEVA
-    por cada request — nunca se comparte con otros fixtures.
-    """
-    Session = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     async def override_get_db():
         async with Session() as db:
@@ -77,8 +51,11 @@ async def client(test_engine):
 
     app_module.app.dependency_overrides.clear()
 
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
 
-# ─── Helper de login ─────────────────────────────────────────────────────────
+    await engine.dispose()
+
 
 async def login(client: AsyncClient, email: str, password: str = "Test1234!") -> str:
     resp = await client.post(
@@ -89,8 +66,6 @@ async def login(client: AsyncClient, email: str, password: str = "Test1234!") ->
     assert resp.status_code == 200, f"Login failed ({email}): {resp.text}"
     return resp.json()["access_token"]
 
-
-# ─── Setup fixtures (crean datos vía HTTP) ───────────────────────────────────
 
 @pytest_asyncio.fixture
 async def vet_setup(client):

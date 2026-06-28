@@ -7,7 +7,7 @@ import apiClient from '../../api/client'
 import PageHeader from '../../components/ui/PageHeader'
 import EmptyState from '../../components/ui/EmptyState'
 import Modal from '../../components/ui/Modal'
-import { InputField, SelectField } from '../../components/ui/FormField'
+import { InputField } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
 
 interface Vacuna {

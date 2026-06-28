@@ -157,7 +157,7 @@ function ReporteBelleza({ periodo }: { periodo: Periodo }) {
   if (isLoading) return <Spinner />
   if (!data) return null
 
-  const { resumen, top_servicios, ingresos_por_dia, por_metodo } = data
+  const { resumen, top_servicios, ingresos_por_dia } = data
 
   return (
     <div className="space-y-4">

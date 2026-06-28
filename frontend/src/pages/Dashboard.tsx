@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
 import apiClient from '../api/client'
-import { useOrganizacion } from '../hooks/useOrganizacion'
 
 interface DashboardData {
   rubro: string
@@ -22,7 +21,6 @@ const RUBRO_BG: Record<string, string> = {
 }
 
 export default function Dashboard() {
-  const { org } = useOrganizacion()
   const { data, isLoading } = useQuery<DashboardData>({
     queryKey: ['dashboard'],
     queryFn: async () => (await apiClient.get('/dashboard/')).data,

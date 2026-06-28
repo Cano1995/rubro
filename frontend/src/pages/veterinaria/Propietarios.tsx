@@ -7,7 +7,6 @@ import EmptyState from '../../components/ui/EmptyState'
 import Modal from '../../components/ui/Modal'
 import { InputField } from '../../components/ui/FormField'
 import { useToast } from '../../components/ui/Toast'
-import ConfirmDialog from '../../components/ui/ConfirmDialog'
 
 interface Propietario {
   id: number
@@ -27,7 +26,6 @@ export default function VetPropietarios() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Propietario | null>(null)
   const [form, setForm] = useState(empty)
-  const [deleteTarget, setDeleteTarget] = useState<number | null>(null)
 
   const { data: propietarios = [], isLoading } = useQuery<Propietario[]>({
     queryKey: ['vet-propietarios'],
