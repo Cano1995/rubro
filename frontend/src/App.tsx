@@ -4,6 +4,7 @@ import { useAuth } from './hooks/useAuth'
 import { useOrganizacion } from './hooks/useOrganizacion'
 import Sidebar from './components/layout/Sidebar'
 import Topbar from './components/layout/Topbar'
+import AlertaSuscripcion from './components/AlertaSuscripcion'
 
 // Páginas públicas
 import Login from './pages/Login'
@@ -66,6 +67,7 @@ function AppShell() {
           onMenuToggle={() => setSidebarOpen((v) => !v)}
           onLogout={logout}
         />
+        <AlertaSuscripcion />
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
           <Routes>
             <Route path="/dashboard" element={<Dashboard />} />
