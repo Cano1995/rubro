@@ -9,17 +9,20 @@ from app.core.database import engine, Base
 from app.core.limiter import limiter
 
 # Routers base
-from app.routers import auth, organizaciones, usuarios, dashboard, admin
+from app.routers import auth, organizaciones, usuarios, dashboard, admin, suscripciones
 
 # Módulo veterinaria
 from app.routers.veterinaria import pacientes as vet_pacientes
 from app.routers.veterinaria import propietarios as vet_propietarios
 from app.routers.veterinaria import citas as vet_citas
+from app.routers.veterinaria import historiales as vet_historiales
+from app.routers.veterinaria import vacunas as vet_vacunas
 
 # Módulo belleza
 from app.routers.belleza import clientes as bel_clientes
 from app.routers.belleza import servicios as bel_servicios
 from app.routers.belleza import citas as bel_citas
+from app.routers.belleza import staff as bel_staff
 
 # Módulo ropería
 from app.routers.roperia import productos as rop_productos
@@ -88,16 +91,20 @@ app.include_router(organizaciones.router)
 app.include_router(usuarios.router)
 app.include_router(dashboard.router)
 app.include_router(admin.router)
+app.include_router(suscripciones.router)
 
 # --- Módulo: veterinaria ---
 app.include_router(vet_propietarios.router)
 app.include_router(vet_pacientes.router)
 app.include_router(vet_citas.router)
+app.include_router(vet_historiales.router)
+app.include_router(vet_vacunas.router)
 
 # --- Módulo: belleza ---
 app.include_router(bel_clientes.router)
 app.include_router(bel_servicios.router)
 app.include_router(bel_citas.router)
+app.include_router(bel_staff.router)
 
 # --- Módulo: ropería ---
 app.include_router(rop_categorias.router)
