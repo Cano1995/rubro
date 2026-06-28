@@ -1,0 +1,55 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: rubro
+      POSTGRES_PASSWORD: rubro_dev
+      POSTGRES_DB: rubro_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rubro -d rubro_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://rubro:rubro_dev@db:5432/rubro_db
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: dev-secret-key-change-in-production
+      ENVIRONMENT: development
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./backend:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_URL: http://localhost:8000
+    volumes:
+      - ./frontend/src:/app/src
+    command: npm run dev -- --host 0.0.0.0
+
+volumes:
+  pgdata:

@@ -1,0 +1,2 @@
+# railway.toml raíz — referencia para deploy manual por servicio
+# Configurar en Railway: dos servicios separados apuntando a /backend y /frontend
