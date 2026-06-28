@@ -82,6 +82,36 @@ async def create_paciente(
     return paciente
 
 
+class PacienteUpdate(BaseModel):
+    nombre: str | None = None
+    especie: str | None = None
+    raza: str | None = None
+    color: str | None = None
+    sexo: Sexo | None = None
+    fecha_nacimiento: date | None = None
+    esterilizado: bool | None = None
+
+
+@router.patch("/{paciente_id}", response_model=PacienteOut)
+async def update_paciente(
+    paciente_id: int,
+    data: PacienteUpdate,
+    _=Depends(_require),
+    org=Depends(get_current_org),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Paciente).where(Paciente.id == paciente_id, Paciente.organizacion_id == org.id)
+    )
+    paciente = result.scalar_one_or_none()
+    if not paciente:
+        raise HTTPException(404, "Paciente no encontrado")
+    for k, v in data.model_dump(exclude_unset=True).items():
+        setattr(paciente, k, v)
+    db.add(paciente)
+    return paciente
+
+
 @router.get("/{paciente_id}", response_model=PacienteOut)
 async def get_paciente(
     paciente_id: int,
