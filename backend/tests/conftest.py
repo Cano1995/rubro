@@ -53,8 +53,10 @@ def _insert_org_user(rubro: str, org_nombre: str, email: str, password: str) -> 
         with conn.begin():
             result = conn.execute(
                 text("""
-                    INSERT INTO organizaciones (nombre, rubro, plan, estado, activo)
-                    VALUES (:nombre, CAST(:rubro AS rubronegocio), 'free', 'prueba', true)
+                    INSERT INTO organizaciones
+                        (nombre, rubro, plan, estado, activo, configuracion)
+                    VALUES
+                        (:nombre, CAST(:rubro AS rubronegocio), 'free', 'prueba', true, '{}')
                     RETURNING id
                 """),
                 {"nombre": org_nombre, "rubro": rubro},
