@@ -2,15 +2,15 @@
 Fixtures globales para tests de integración.
 Usa PostgreSQL real — no mocks.
 
-Diseño: cada test tiene su propio engine (drop+create schema) en su propio
-event loop. Elimina el problema "Future attached to a different loop" que
-ocurre cuando un engine session-scoped se usa desde function-scoped tests.
-El overhead de recrear el schema es ~100ms por test y es aceptable.
+Diseño: cada test recrea el schema con SQL puro (DROP SCHEMA CASCADE / CREATE
+SCHEMA), evitando completamente las consultas a pg_catalog que hacen que
+asyncpg lance InterfaceError. create_all usa checkfirst=False porque el
+schema ya está vacío. Sin teardown drop — el próximo test lo resetea.
 """
 import os
-import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
 from app.core.database import Base, get_db
@@ -26,14 +26,22 @@ TEST_DATABASE_URL = os.getenv(
 @pytest_asyncio.fixture
 async def client():
     """
-    Fixture principal: crea engine propio, recrea schema y devuelve un
-    AsyncClient ya configurado. Todo en el mismo event loop del test.
+    HTTP client por test.
+
+    Resetea el schema con SQL puro (sin pg_catalog introspection) y crea
+    las tablas con checkfirst=False. La dependencia get_db genera sesiones
+    propias que commiten igual que en producción.
     """
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 
+    # Reset schema limpio — evita run_sync(drop_all) que usa pg_catalog
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(text("DROP SCHEMA IF EXISTS public CASCADE"))
+        await conn.execute(text("CREATE SCHEMA public"))
+
+    # Crear tablas sin introspección (schema vacío, checkfirst innecesario)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all, checkfirst=False)
 
     Session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -55,11 +63,8 @@ async def client():
         yield ac
 
     app_module.app.dependency_overrides.clear()
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-
     await engine.dispose()
+    # No hace falta DROP aquí — el próximo setUp ya hace DROP SCHEMA CASCADE
 
 
 async def login(client: AsyncClient, email: str, password: str = "Test1234!") -> str:
