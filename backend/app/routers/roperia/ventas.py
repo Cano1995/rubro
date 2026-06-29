@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from datetime import datetime
 from app.core.database import get_db
@@ -103,7 +104,9 @@ async def crear_venta(
     for item in items_db:
         item.venta_id = venta.id
         db.add(item)
+    await db.flush()
 
+    await db.refresh(venta, ["items"])
     return venta
 
 
@@ -112,6 +115,9 @@ async def list_ventas(
     _=Depends(_require), org=Depends(get_current_org), db: AsyncSession = Depends(get_db)
 ):
     result = await db.execute(
-        select(Venta).where(Venta.organizacion_id == org.id).order_by(Venta.created_at.desc())
+        select(Venta)
+        .options(selectinload(Venta.items))
+        .where(Venta.organizacion_id == org.id)
+        .order_by(Venta.created_at.desc())
     )
     return result.scalars().all()

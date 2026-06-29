@@ -15,7 +15,7 @@ async def test_dashboard_veterinaria(client: AsyncClient, vet_setup):
     resp = await client.get("/dashboard/", headers=h)
     assert resp.status_code == 200
     data = resp.json()
-    assert "pacientes_total" in data or "citas_hoy" in data
+    assert "total_pacientes" in data["kpis"] or "citas_hoy" in data["kpis"]
 
 
 @pytest.mark.asyncio
@@ -24,7 +24,7 @@ async def test_dashboard_belleza(client: AsyncClient, bel_setup):
     resp = await client.get("/dashboard/", headers=h)
     assert resp.status_code == 200
     data = resp.json()
-    assert "clientes_total" in data or "citas_hoy" in data
+    assert "total_clientes" in data["kpis"] or "citas_hoy" in data["kpis"]
 
 
 @pytest.mark.asyncio
@@ -33,4 +33,4 @@ async def test_dashboard_roperia(client: AsyncClient, rop_setup):
     resp = await client.get("/dashboard/", headers=h)
     assert resp.status_code == 200
     data = resp.json()
-    assert "productos_total" in data or "ventas_hoy" in data
+    assert "total_productos" in data["kpis"] or "ventas_hoy" in data["kpis"]

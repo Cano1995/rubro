@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 from datetime import date, datetime
 from app.core.database import get_db
@@ -59,7 +60,9 @@ async def list_pacientes(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(Paciente).where(Paciente.organizacion_id == org.id, Paciente.activo == True)
+        select(Paciente)
+        .options(selectinload(Paciente.propietario))
+        .where(Paciente.organizacion_id == org.id, Paciente.activo == True)
         .order_by(Paciente.nombre)
     )
     return result.scalars().all()
@@ -79,6 +82,7 @@ async def create_paciente(
     paciente = Paciente(**data.model_dump(), organizacion_id=org.id)
     db.add(paciente)
     await db.flush()
+    await db.refresh(paciente, ["propietario"])
     return paciente
 
 
@@ -101,7 +105,9 @@ async def update_paciente(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(Paciente).where(Paciente.id == paciente_id, Paciente.organizacion_id == org.id)
+        select(Paciente)
+        .options(selectinload(Paciente.propietario))
+        .where(Paciente.id == paciente_id, Paciente.organizacion_id == org.id)
     )
     paciente = result.scalar_one_or_none()
     if not paciente:
@@ -120,7 +126,9 @@ async def get_paciente(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(Paciente).where(Paciente.id == paciente_id, Paciente.organizacion_id == org.id)
+        select(Paciente)
+        .options(selectinload(Paciente.propietario))
+        .where(Paciente.id == paciente_id, Paciente.organizacion_id == org.id)
     )
     paciente = result.scalar_one_or_none()
     if not paciente:
