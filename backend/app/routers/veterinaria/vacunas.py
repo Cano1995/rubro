@@ -68,11 +68,9 @@ async def create_vacuna(
     org=Depends(get_current_org),
     db: AsyncSession = Depends(get_db),
 ):
-    vacuna = Vacuna(
-        **data.model_dump(),
-        organizacion_id=org.id,
-        veterinario_id=data.veterinario_id or current_user.id,
-    )
+    vacuna_data = data.model_dump()
+    vacuna_data["veterinario_id"] = data.veterinario_id or current_user.id
+    vacuna = Vacuna(**vacuna_data, organizacion_id=org.id)
     db.add(vacuna)
     await db.flush()
     return vacuna

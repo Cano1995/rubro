@@ -73,11 +73,9 @@ async def create_historial(
     org=Depends(get_current_org),
     db: AsyncSession = Depends(get_db),
 ):
-    historial = HistorialMedico(
-        **data.model_dump(),
-        organizacion_id=org.id,
-        veterinario_id=data.veterinario_id or current_user.id,
-    )
+    historial_data = data.model_dump()
+    historial_data["veterinario_id"] = data.veterinario_id or current_user.id
+    historial = HistorialMedico(**historial_data, organizacion_id=org.id)
     db.add(historial)
     await db.flush()
     return historial
