@@ -30,11 +30,20 @@ class FacConfig(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     organizacion_id: Mapped[int] = mapped_column(Integer, ForeignKey("organizaciones.id"), unique=True)
 
-    prefijo: Mapped[str] = mapped_column(String(10), default="FAC")
+    # Numeración paraguaya: XXX-YYY-NNNNNNN
+    codigo_establecimiento: Mapped[str] = mapped_column(String(3), default="001")
+    punto_expedicion: Mapped[str] = mapped_column(String(3), default="001")
     siguiente_numero: Mapped[int] = mapped_column(Integer, default=1)
+
+    # Timbrado SET (autorización de emisión)
+    timbrado: Mapped[str | None] = mapped_column(String(20))
+    timbrado_vigencia_desde: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    timbrado_vigencia_hasta: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     tasa_iva_default: Mapped[TasaIVA] = mapped_column(Enum(TasaIVA), default=TasaIVA.IVA_10)
     precio_incluye_iva: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    # Datos del emisor
     ruc: Mapped[str | None] = mapped_column(String(20))
     razon_social: Mapped[str | None] = mapped_column(String(200))
     direccion_fiscal: Mapped[str | None] = mapped_column(String(300))

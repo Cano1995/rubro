@@ -11,7 +11,20 @@ interface FacCliente { id: number; nombre: string; ruc: string | null; email: st
 interface ItemOut { id: number; descripcion: string; cantidad: number; precio_unitario: number; tasa_iva: TasaIVA; precio_incluye_iva: boolean; subtotal: number; monto_iva: number; total: number }
 interface PagoOut { id: number; monto: number; fecha: string; metodo_pago: string }
 interface FacturaOut { id: number; numero: string; fecha: string; condicion: string; estado: EstadoFactura; total_base: number; total_iva10: number; total_iva5: number; total_exento: number; total_general: number; notas: string | null; cliente: { id: number; nombre: string; ruc: string | null } | null; items: ItemOut[]; pagos: PagoOut[] }
-interface FacConfig { prefijo: string; siguiente_numero: number; tasa_iva_default: TasaIVA; precio_incluye_iva: boolean; ruc: string | null; razon_social: string | null; direccion_fiscal: string | null; telefono_fiscal: string | null }
+interface FacConfig {
+  codigo_establecimiento: string
+  punto_expedicion: string
+  siguiente_numero: number
+  timbrado: string | null
+  timbrado_vigencia_desde: string | null
+  timbrado_vigencia_hasta: string | null
+  tasa_iva_default: TasaIVA
+  precio_incluye_iva: boolean
+  ruc: string | null
+  razon_social: string | null
+  direccion_fiscal: string | null
+  telefono_fiscal: string | null
+}
 
 const TASA_LABELS: Record<TasaIVA, string> = { IVA_10: 'IVA 10%', IVA_5: 'IVA 5%', EXENTO: 'Exento' }
 const ESTADO_COLORS: Record<EstadoFactura, string> = {
@@ -394,39 +407,115 @@ function TabConfig() {
   })
 
   if (!cfg) return null
-  const val = (k: keyof FacConfig) => (form[k] !== undefined ? form[k] : cfg[k]) as string
+  const strVal = (k: keyof FacConfig) => String((form[k] !== undefined ? form[k] : cfg[k]) ?? '')
+
+  // Previsualización del próximo número
+  const est = (form.codigo_establecimiento ?? cfg.codigo_establecimiento).padStart(3, '0')
+  const pto = (form.punto_expedicion ?? cfg.punto_expedicion).padStart(3, '0')
+  const nextNum = String(cfg.siguiente_numero).padStart(7, '0')
+  const preview = `${est}-${pto}-${nextNum}`
 
   return (
-    <div className="space-y-4 max-w-lg">
-      <div className="grid sm:grid-cols-2 gap-3">
-        {([
-          ['prefijo', 'Prefijo factura'],
-          ['ruc', 'RUC emisor'],
-          ['razon_social', 'Razón social'],
-          ['direccion_fiscal', 'Dirección fiscal'],
-          ['telefono_fiscal', 'Teléfono'],
-        ] as [keyof FacConfig, string][]).map(([k, label]) => (
-          <div key={k}>
-            <label className="text-xs font-medium text-gray-600 block mb-1">{label}</label>
-            <input value={String(val(k) ?? '')} onChange={e => setForm(v => ({ ...v, [k]: e.target.value }))}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+    <div className="space-y-5 max-w-lg">
+
+      {/* Numeración paraguaya */}
+      <div>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Numeración (formato SET)</p>
+        <div className="bg-indigo-50 rounded-xl p-3 mb-3 flex items-center gap-3">
+          <span className="text-xs text-gray-500">Próxima factura:</span>
+          <span className="font-mono font-bold text-indigo-700 text-base">{preview}</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Código establecimiento</label>
+            <input
+              value={strVal('codigo_establecimiento')}
+              onChange={e => setForm(v => ({ ...v, codigo_establecimiento: e.target.value.slice(0, 3) }))}
+              maxLength={3}
+              placeholder="001"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono"
+            />
           </div>
-        ))}
-        <div>
-          <label className="text-xs font-medium text-gray-600 block mb-1">IVA por defecto</label>
-          <select value={String(val('tasa_iva_default'))} onChange={e => setForm(v => ({ ...v, tasa_iva_default: e.target.value as TasaIVA }))}
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
-            <option value="IVA_10">10%</option>
-            <option value="IVA_5">5%</option>
-            <option value="EXENTO">Exento</option>
-          </select>
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Punto de expedición</label>
+            <input
+              value={strVal('punto_expedicion')}
+              onChange={e => setForm(v => ({ ...v, punto_expedicion: e.target.value.slice(0, 3) }))}
+              maxLength={3}
+              placeholder="001"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono"
+            />
+          </div>
         </div>
       </div>
-      <label className="flex items-center gap-2 text-sm text-gray-700">
-        <input type="checkbox" checked={Boolean(form.precio_incluye_iva ?? cfg.precio_incluye_iva)}
-          onChange={e => setForm(v => ({ ...v, precio_incluye_iva: e.target.checked }))} />
-        Los precios incluyen IVA por defecto
-      </label>
+
+      {/* Timbrado SET */}
+      <div>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Timbrado SET</p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">N° Timbrado</label>
+            <input
+              value={strVal('timbrado')}
+              onChange={e => setForm(v => ({ ...v, timbrado: e.target.value }))}
+              placeholder="12345678"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Vigencia desde</label>
+            <input
+              type="date"
+              value={strVal('timbrado_vigencia_desde').slice(0, 10)}
+              onChange={e => setForm(v => ({ ...v, timbrado_vigencia_desde: e.target.value || null }))}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Vigencia hasta</label>
+            <input
+              type="date"
+              value={strVal('timbrado_vigencia_hasta').slice(0, 10)}
+              onChange={e => setForm(v => ({ ...v, timbrado_vigencia_hasta: e.target.value || null }))}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Datos del emisor */}
+      <div>
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Datos del emisor</p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          {([
+            ['ruc', 'RUC emisor'],
+            ['razon_social', 'Razón social'],
+            ['direccion_fiscal', 'Dirección fiscal'],
+            ['telefono_fiscal', 'Teléfono'],
+          ] as [keyof FacConfig, string][]).map(([k, label]) => (
+            <div key={k}>
+              <label className="text-xs font-medium text-gray-600 block mb-1">{label}</label>
+              <input value={strVal(k)} onChange={e => setForm(v => ({ ...v, [k]: e.target.value }))}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+            </div>
+          ))}
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">IVA por defecto</label>
+            <select value={strVal('tasa_iva_default')} onChange={e => setForm(v => ({ ...v, tasa_iva_default: e.target.value as TasaIVA }))}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+              <option value="IVA_10">10%</option>
+              <option value="IVA_5">5%</option>
+              <option value="EXENTO">Exento</option>
+            </select>
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-gray-700 mt-3">
+          <input type="checkbox" checked={Boolean(form.precio_incluye_iva ?? cfg.precio_incluye_iva)}
+            onChange={e => setForm(v => ({ ...v, precio_incluye_iva: e.target.checked }))} />
+          Los precios incluyen IVA por defecto
+        </label>
+      </div>
+
       <button onClick={() => mut.mutate()} disabled={mut.isPending}
         className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
         {saved ? <><Check size={14} /> Guardado</> : mut.isPending ? 'Guardando...' : 'Guardar configuración'}

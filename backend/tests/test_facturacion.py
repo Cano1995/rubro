@@ -24,22 +24,27 @@ async def test_config_default(client: AsyncClient, vet_setup):
     resp = await client.get("/facturacion/config/", headers=h)
     assert resp.status_code == 200
     data = resp.json()
-    assert data["prefijo"] == "FAC"
+    assert data["codigo_establecimiento"] == "001"
+    assert data["punto_expedicion"] == "001"
     assert data["tasa_iva_default"] == "IVA_10"
     assert data["precio_incluye_iva"] is True
+    assert data["timbrado"] is None
 
 
 @pytest.mark.asyncio
 async def test_update_config(client: AsyncClient, vet_setup):
     h = await auth_headers(client, vet_setup)
     resp = await client.put("/facturacion/config/", json={
-        "prefijo": "VET",
+        "codigo_establecimiento": "002",
+        "punto_expedicion": "001",
+        "timbrado": "12345678",
         "ruc": "80012345-1",
         "razon_social": "Veterinaria Test S.A.",
     }, headers=h)
     assert resp.status_code == 200
     data = resp.json()
-    assert data["prefijo"] == "VET"
+    assert data["codigo_establecimiento"] == "002"
+    assert data["timbrado"] == "12345678"
     assert data["ruc"] == "80012345-1"
 
 
@@ -70,7 +75,9 @@ async def test_crear_factura_iva10_incluye(client: AsyncClient, vet_setup):
     assert data["total_iva10"] == 10000.0
     assert data["total_base"] == 100000.0
     assert data["estado"] == "pendiente"
-    assert data["numero"].startswith("FAC-")
+    # Formato paraguayo: XXX-YYY-NNNNNNN
+    import re
+    assert re.match(r'^\d{3}-\d{3}-\d{7}$', data["numero"]), f"Número inválido: {data['numero']}"
     assert len(data["items"]) == 1
 
 
@@ -96,12 +103,15 @@ async def test_crear_factura_sin_incluir_iva(client: AsyncClient, vet_setup):
 
 @pytest.mark.asyncio
 async def test_numeracion_correlativa(client: AsyncClient, vet_setup):
-    """Dos facturas consecutivas deben tener números FAC-000001 y FAC-000002."""
+    """Dos facturas consecutivas deben terminar en 0000001 y 0000002."""
     h = await auth_headers(client, vet_setup)
     f1 = (await client.post("/facturacion/facturas/", json={"items": [ITEM_BASICO]}, headers=h)).json()
     f2 = (await client.post("/facturacion/facturas/", json={"items": [ITEM_BASICO]}, headers=h)).json()
-    assert f1["numero"] == "FAC-000001"
-    assert f2["numero"] == "FAC-000002"
+    assert f1["numero"].endswith("-0000001"), f"Esperado xxx-xxx-0000001, got {f1['numero']}"
+    assert f2["numero"].endswith("-0000002"), f"Esperado xxx-xxx-0000002, got {f2['numero']}"
+    # La parte de establecimiento/expedición por defecto es 001-001
+    assert f1["numero"] == "001-001-0000001"
+    assert f2["numero"] == "001-001-0000002"
 
 
 @pytest.mark.asyncio

@@ -176,9 +176,9 @@ async def create_factura(
 
     totales = calcular_totales(items_calc)
 
-    # Generar número correlativo
+    # Generar número correlativo formato paraguayo: XXX-YYY-NNNNNNN
     cfg = await _get_or_create_config(org.id, db)
-    numero = f"{cfg.prefijo}-{cfg.siguiente_numero:06d}"
+    numero = f"{cfg.codigo_establecimiento}-{cfg.punto_expedicion}-{cfg.siguiente_numero:07d}"
     cfg.siguiente_numero += 1
 
     factura = Factura(

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
+from datetime import datetime
 from app.core.database import get_db
 from app.core.deps import get_current_org
 from app.models.facturacion.models import FacConfig, TasaIVA
@@ -10,8 +11,12 @@ router = APIRouter(prefix="/facturacion/config", tags=["facturacion"])
 
 
 class FacConfigOut(BaseModel):
-    prefijo: str
+    codigo_establecimiento: str
+    punto_expedicion: str
     siguiente_numero: int
+    timbrado: str | None
+    timbrado_vigencia_desde: datetime | None
+    timbrado_vigencia_hasta: datetime | None
     tasa_iva_default: str
     precio_incluye_iva: bool
     ruc: str | None
@@ -24,7 +29,11 @@ class FacConfigOut(BaseModel):
 
 
 class FacConfigUpdate(BaseModel):
-    prefijo: str | None = None
+    codigo_establecimiento: str | None = None
+    punto_expedicion: str | None = None
+    timbrado: str | None = None
+    timbrado_vigencia_desde: datetime | None = None
+    timbrado_vigencia_hasta: datetime | None = None
     tasa_iva_default: TasaIVA | None = None
     precio_incluye_iva: bool | None = None
     ruc: str | None = None
