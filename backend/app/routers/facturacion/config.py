@@ -24,6 +24,7 @@ class FacConfigOut(BaseModel):
     direccion_fiscal: str | None
     telefono_fiscal: str | None
     # Integración elec-cano
+    factura_electronica_activa: bool
     elec_url: str | None
     elec_api_key: str | None
 

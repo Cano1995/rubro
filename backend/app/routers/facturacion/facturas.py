@@ -284,6 +284,8 @@ async def emitir_electronica(
         raise HTTPException(400, f"Factura ya emitida electrónicamente (CDC: {factura.cdc})")
 
     cfg = await _get_or_create_config(org.id, db)
+    if not cfg.factura_electronica_activa:
+        raise HTTPException(403, "La facturación electrónica no está activada. Contactá al administrador.")
     try:
         resultado = await elec_cano_client.emitir_electronica(factura, cfg, data.tipo_transaccion, data.enviar_sifen)
     except ValueError as e:

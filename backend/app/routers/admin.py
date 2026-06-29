@@ -9,6 +9,7 @@ from app.core.security import hash_password
 from app.models.organizacion import Organizacion, PlanOrg, EstadoOrg, RubroNegocio
 from app.models.usuario import Usuario, RolUsuario
 from app.models.suscripcion import Suscripcion, EstadoSuscripcion
+from app.models.facturacion.models import FacConfig
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -26,6 +27,7 @@ class OrgAdminOut(BaseModel):
     total_usuarios: int = 0
     mrr: float = 0.0
     fecha_vencimiento: datetime | None = None
+    factura_electronica_activa: bool = False
 
     class Config:
         from_attributes = True
@@ -121,11 +123,14 @@ async def list_orgs_admin(_=Depends(require_superadmin), db: AsyncSession = Depe
             .limit(1)
         )
         sus = sus_res.scalar_one_or_none()
+        fac_res = await db.execute(select(FacConfig).where(FacConfig.organizacion_id == org.id))
+        fac_cfg = fac_res.scalar_one_or_none()
         out.append({
             **org.__dict__,
             "total_usuarios": count or 0,
             "mrr": float(sus.monto_mensual or 0) if sus else 0.0,
             "fecha_vencimiento": sus.fecha_vencimiento if sus else None,
+            "factura_electronica_activa": fac_cfg.factura_electronica_activa if fac_cfg else False,
         })
     return out
 
@@ -197,6 +202,30 @@ async def update_plan(
     )
     db.add(sus)
     return {"ok": True, "org_id": org_id, "plan": data.plan, "estado": data.estado}
+
+
+@router.patch("/organizaciones/{org_id}/facturacion-electronica")
+async def toggle_facturacion_electronica(
+    org_id: int,
+    _=Depends(require_superadmin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Activa o desactiva la facturación electrónica SIFEN para una organización."""
+    result = await db.execute(select(Organizacion).where(Organizacion.id == org_id))
+    org = result.scalar_one_or_none()
+    if not org:
+        raise HTTPException(404)
+
+    fac_res = await db.execute(select(FacConfig).where(FacConfig.organizacion_id == org_id))
+    cfg = fac_res.scalar_one_or_none()
+    if not cfg:
+        cfg = FacConfig(organizacion_id=org_id, factura_electronica_activa=True)
+        db.add(cfg)
+    else:
+        cfg.factura_electronica_activa = not cfg.factura_electronica_activa
+
+    await db.flush()
+    return {"org_id": org_id, "factura_electronica_activa": cfg.factura_electronica_activa}
 
 
 @router.patch("/organizaciones/{org_id}/toggle")

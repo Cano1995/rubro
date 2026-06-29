@@ -24,6 +24,7 @@ interface FacConfig {
   razon_social: string | null
   direccion_fiscal: string | null
   telefono_fiscal: string | null
+  factura_electronica_activa: boolean
   elec_url: string | null
   elec_api_key: string | null
 }
@@ -47,11 +48,12 @@ const SIFEN_COLORS: Record<string, string> = {
   cancelado: 'bg-gray-100 text-gray-600',
 }
 
-function FilaFactura({ f, onPagar, onCancelar, onEmitirElec }: {
+function FilaFactura({ f, onPagar, onCancelar, onEmitirElec, hasElec }: {
   f: FacturaOut
   onPagar: () => void
   onCancelar: () => void
   onEmitirElec: () => void
+  hasElec: boolean
 }) {
   const [open, setOpen] = useState(false)
   return (
@@ -153,7 +155,7 @@ function FilaFactura({ f, onPagar, onCancelar, onEmitirElec }: {
                 <Check size={12} /> Registrar pago
               </button>
             )}
-            {!f.cdc && f.estado !== 'cancelada' && (
+            {hasElec && !f.cdc && f.estado !== 'cancelada' && (
               <button
                 onClick={onEmitirElec}
                 className="flex items-center gap-1 text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 transition-colors"
@@ -702,20 +704,32 @@ function TabConfig() {
 
       {/* Integración elec-cano */}
       <div className="space-y-3">
-        <p className="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1.5"><Zap size={12} /> Factura Electrónica SIFEN (elec-cano)</p>
-        <p className="text-xs text-gray-400">URL y API Key del microservicio elec-cano para emitir DEs a SIFEN. Dejá vacío si no usás factura electrónica.</p>
-        <div>
-          <label className="text-xs font-medium text-gray-600 block mb-1">URL de elec-cano</label>
-          <input value={strVal('elec_url')} onChange={e => setForm(v => ({ ...v, elec_url: e.target.value }))}
-            placeholder="http://localhost:8001"
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono" />
+        <div className="flex items-center gap-3">
+          <p className="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1.5"><Zap size={12} /> Factura Electrónica SIFEN</p>
+          {cfg.factura_electronica_activa
+            ? <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700"><Zap size={9} /> Activa</span>
+            : <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Inactiva</span>
+          }
         </div>
-        <div>
-          <label className="text-xs font-medium text-gray-600 block mb-1">API Key</label>
-          <input type="password" value={strVal('elec_api_key')} onChange={e => setForm(v => ({ ...v, elec_api_key: e.target.value }))}
-            placeholder="tu-api-key-secreta"
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono" />
-        </div>
+        {cfg.factura_electronica_activa ? (
+          <>
+            <p className="text-xs text-gray-400">Configurá la URL y API Key del microservicio elec-cano.</p>
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1">URL de elec-cano</label>
+              <input value={strVal('elec_url')} onChange={e => setForm(v => ({ ...v, elec_url: e.target.value }))}
+                placeholder="http://localhost:8001"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1">API Key</label>
+              <input type="password" value={strVal('elec_api_key')} onChange={e => setForm(v => ({ ...v, elec_api_key: e.target.value }))}
+                placeholder="tu-api-key-secreta"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono" />
+            </div>
+          </>
+        ) : (
+          <p className="text-xs text-gray-400">El servicio de factura electrónica no está activado para tu cuenta. Contactá al administrador.</p>
+        )}
       </div>
 
       <button onClick={() => mut.mutate()} disabled={mut.isPending}
@@ -803,6 +817,7 @@ export default function Facturacion() {
               onPagar={() => setPagarFactura(f)}
               onCancelar={() => cancelarMut.mutate(f.id)}
               onEmitirElec={() => emitirElecMut.mutate(f.id)}
+              hasElec={config?.factura_electronica_activa ?? false}
             />
           ))}
         </div>

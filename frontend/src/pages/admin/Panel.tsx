@@ -2,7 +2,7 @@ import { useState, Fragment, type ElementType } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Shield, Building2, Users, Activity, TrendingUp, AlertTriangle,
-  Plus, ChevronDown, ChevronUp, Check, X, Clock,
+  Plus, ChevronDown, ChevronUp, Check, X, Clock, Zap,
 } from 'lucide-react'
 import apiClient from '../../api/client'
 import { clsx } from 'clsx'
@@ -29,6 +29,7 @@ interface OrgAdmin {
   total_usuarios: number
   mrr: number
   fecha_vencimiento: string | null
+  factura_electronica_activa: boolean
 }
 
 interface Vencimiento {
@@ -177,6 +178,11 @@ function TabOrganizaciones() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-orgs'] }),
   })
 
+  const toggleElec = useMutation({
+    mutationFn: (id: number) => apiClient.patch(`/admin/organizaciones/${id}/facturacion-electronica`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-orgs'] }),
+  })
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -298,12 +304,19 @@ function TabOrganizaciones() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <button
-                      onClick={() => setExpandedId(expandedId === org.id ? null : org.id)}
-                      className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
-                    >
-                      Acciones {expandedId === org.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {org.factura_electronica_activa && (
+                        <span className="flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
+                          <Zap size={9} /> e-Fac
+                        </span>
+                      )}
+                      <button
+                        onClick={() => setExpandedId(expandedId === org.id ? null : org.id)}
+                        className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
+                      >
+                        Acciones {expandedId === org.id ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                      </button>
+                    </div>
                   </td>
                 </tr>
                 {expandedId === org.id && (
@@ -320,6 +333,18 @@ function TabOrganizaciones() {
                           )}
                         >
                           {org.activo ? <><X size={12} /> Suspender</> : <><Check size={12} /> Activar</>}
+                        </button>
+                        <button
+                          onClick={() => toggleElec.mutate(org.id)}
+                          className={clsx(
+                            'flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors',
+                            org.factura_electronica_activa
+                              ? 'border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                              : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                          )}
+                        >
+                          <Zap size={11} />
+                          {org.factura_electronica_activa ? 'Desactivar e-Factura' : 'Activar e-Factura'}
                         </button>
                       </div>
                     </td>

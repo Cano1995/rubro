@@ -53,6 +53,8 @@ class FacConfig(Base):
     telefono_fiscal: Mapped[str | None] = mapped_column(String(30))
 
     # Integración elec-cano (facturación electrónica SIFEN)
+    # Solo el superadmin puede activar esto desde el panel admin
+    factura_electronica_activa: Mapped[bool] = mapped_column(Boolean, default=False)
     elec_url: Mapped[str | None] = mapped_column(String(500))
     elec_api_key: Mapped[str | None] = mapped_column(String(200))
 
