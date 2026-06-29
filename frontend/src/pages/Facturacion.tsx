@@ -1,6 +1,6 @@
 import { useState, type ElementType } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { FileText, Plus, Users, Settings, Check, X, ChevronDown, ChevronUp, Trash2 } from 'lucide-react'
+import { FileText, Plus, Users, Settings, Check, X, ChevronDown, ChevronUp, Trash2, Hash } from 'lucide-react'
 import apiClient from '../api/client'
 import { clsx } from 'clsx'
 
@@ -393,7 +393,225 @@ function TabClientes() {
   )
 }
 
-// ─── Tab Configuración ────────────────────────────────────────────────────────
+// ─── Tab Numeración DNIT ──────────────────────────────────────────────────────
+
+interface NumeracionOut {
+  codigo_establecimiento: string
+  punto_expedicion: string
+  siguiente_numero: number
+  serie: string | null
+  timbrado: string | null
+  timbrado_vigencia_desde: string | null
+  timbrado_vigencia_hasta: string | null
+  proximo_numero_formateado: string
+}
+
+function TabNumeracion() {
+  const qc = useQueryClient()
+  const { data: num } = useQuery<NumeracionOut>({
+    queryKey: ['fac-numeracion'],
+    queryFn: () => apiClient.get('/facturacion/numeracion/').then(r => r.data),
+  })
+
+  // Estado secciones
+  const [estForm, setEstForm] = useState({ codigo_establecimiento: '', punto_expedicion: '' })
+  const [estSaved, setEstSaved] = useState(false)
+
+  const [timbForm, setTimbForm] = useState({ timbrado: '', timbrado_vigencia_desde: '', timbrado_vigencia_hasta: '' })
+  const [timbSaved, setTimbSaved] = useState(false)
+
+  const [resetNum, setResetNum] = useState('')
+  const [resetConfirm, setResetConfirm] = useState('')
+  const [resetErr, setResetErr] = useState('')
+  const [resetOk, setResetOk] = useState(false)
+
+  const mutEst = useMutation({
+    mutationFn: () => apiClient.patch('/facturacion/numeracion/establecimiento-expedicion', {
+      codigo_establecimiento: estForm.codigo_establecimiento || undefined,
+      punto_expedicion: estForm.punto_expedicion || undefined,
+    }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['fac-numeracion'] }); setEstSaved(true); setTimeout(() => setEstSaved(false), 2000) },
+  })
+
+  const mutTimb = useMutation({
+    mutationFn: () => apiClient.patch('/facturacion/numeracion/timbrado', {
+      timbrado: timbForm.timbrado,
+      timbrado_vigencia_desde: timbForm.timbrado_vigencia_desde,
+      timbrado_vigencia_hasta: timbForm.timbrado_vigencia_hasta,
+    }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['fac-numeracion'] }); setTimbSaved(true); setTimeout(() => setTimbSaved(false), 2000) },
+  })
+
+  const mutReset = useMutation({
+    mutationFn: () => apiClient.post('/facturacion/numeracion/resetear-correlativo', {
+      nuevo_numero: Number(resetNum),
+      confirmacion: resetConfirm,
+    }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['fac-numeracion'] }); setResetOk(true); setResetNum(''); setResetConfirm(''); setTimeout(() => setResetOk(false), 3000) },
+    onError: (e: { response?: { data?: { detail?: string } } }) => setResetErr(e?.response?.data?.detail ?? 'Error al resetear'),
+  })
+
+  if (!num) return <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" /></div>
+
+  // Preview en vivo con los cambios del form
+  const estPrev = (estForm.codigo_establecimiento || num.codigo_establecimiento).padStart(3, '0')
+  const ptoPrev = (estForm.punto_expedicion || num.punto_expedicion).padStart(3, '0')
+  const numPrev = String(num.siguiente_numero).padStart(7, '0')
+  const preview = num.serie ? `${estPrev}-${ptoPrev}-${num.serie}${numPrev}` : `${estPrev}-${ptoPrev}-${numPrev}`
+
+  return (
+    <div className="space-y-6 max-w-lg">
+
+      {/* Estado actual */}
+      <div className="bg-indigo-50 rounded-2xl p-4">
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Próxima factura</p>
+        <p className="font-mono font-bold text-indigo-700 text-2xl tracking-widest">{preview}</p>
+        {num.serie && (
+          <p className="text-xs text-indigo-500 mt-1">Serie activa: <span className="font-mono font-bold">{num.serie}</span></p>
+        )}
+        <div className="flex gap-6 mt-3 text-xs text-gray-500">
+          <span>Establecimiento: <span className="font-mono font-bold text-gray-700">{num.codigo_establecimiento}</span></span>
+          <span>Punto exp.: <span className="font-mono font-bold text-gray-700">{num.punto_expedicion}</span></span>
+          <span>Correlativo: <span className="font-mono font-bold text-gray-700">{num.siguiente_numero.toLocaleString('es-PY')}</span></span>
+        </div>
+      </div>
+
+      {/* Timbrado actual */}
+      <div className="bg-white rounded-xl border border-gray-100 p-4">
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Timbrado DNIT vigente</p>
+        {num.timbrado ? (
+          <div className="space-y-1 text-sm">
+            <p><span className="text-gray-500">N° Timbrado:</span> <span className="font-mono font-bold text-gray-800">{num.timbrado}</span></p>
+            <p><span className="text-gray-500">Vigencia:</span> {num.timbrado_vigencia_desde?.slice(0, 10)} → {num.timbrado_vigencia_hasta?.slice(0, 10)}</p>
+          </div>
+        ) : (
+          <p className="text-sm text-orange-600 font-medium">Sin timbrado registrado — requerido para emitir facturas legales</p>
+        )}
+      </div>
+
+      <hr className="border-gray-100" />
+
+      {/* Sección 1: Establecimiento y punto de expedición */}
+      <div className="space-y-3">
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Establecimiento y punto de expedición</p>
+        <p className="text-xs text-gray-400">Ceros obligatorios. Cambiar el punto de expedición NO reinicia el correlativo.</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Código establecimiento</label>
+            <input
+              value={estForm.codigo_establecimiento}
+              onChange={e => setEstForm(v => ({ ...v, codigo_establecimiento: e.target.value.replace(/\D/g, '').slice(0, 3) }))}
+              placeholder={num.codigo_establecimiento}
+              maxLength={3}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Punto de expedición</label>
+            <input
+              value={estForm.punto_expedicion}
+              onChange={e => setEstForm(v => ({ ...v, punto_expedicion: e.target.value.replace(/\D/g, '').slice(0, 3) }))}
+              placeholder={num.punto_expedicion}
+              maxLength={3}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono"
+            />
+          </div>
+        </div>
+        <button
+          onClick={() => mutEst.mutate()}
+          disabled={mutEst.isPending || (!estForm.codigo_establecimiento && !estForm.punto_expedicion)}
+          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {estSaved ? <><Check size={12} /> Guardado</> : mutEst.isPending ? 'Guardando...' : 'Actualizar'}
+        </button>
+      </div>
+
+      <hr className="border-gray-100" />
+
+      {/* Sección 2: Timbrado */}
+      <div className="space-y-3">
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Registrar nuevo timbrado</p>
+        <p className="text-xs text-gray-400">Al activar un nuevo timbrado podés reiniciar el correlativo desde 1 en la sección inferior.</p>
+        <div className="grid sm:grid-cols-3 gap-3">
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">N° Timbrado</label>
+            <input
+              value={timbForm.timbrado}
+              onChange={e => setTimbForm(v => ({ ...v, timbrado: e.target.value.replace(/\D/g, '') }))}
+              placeholder="12345678"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Vigencia desde</label>
+            <input type="date" value={timbForm.timbrado_vigencia_desde}
+              onChange={e => setTimbForm(v => ({ ...v, timbrado_vigencia_desde: e.target.value }))}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Vigencia hasta</label>
+            <input type="date" value={timbForm.timbrado_vigencia_hasta}
+              onChange={e => setTimbForm(v => ({ ...v, timbrado_vigencia_hasta: e.target.value }))}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+        {mutTimb.isError && <p className="text-xs text-red-600">Verificá que las fechas sean válidas y el timbrado sea numérico.</p>}
+        <button
+          onClick={() => mutTimb.mutate()}
+          disabled={mutTimb.isPending || !timbForm.timbrado || !timbForm.timbrado_vigencia_desde || !timbForm.timbrado_vigencia_hasta}
+          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {timbSaved ? <><Check size={12} /> Timbrado registrado</> : mutTimb.isPending ? 'Guardando...' : 'Registrar timbrado'}
+        </button>
+      </div>
+
+      <hr className="border-gray-100" />
+
+      {/* Sección 3: Resetear correlativo */}
+      <div className="space-y-3">
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Resetear correlativo</p>
+        <p className="text-xs text-gray-400">
+          Solo se puede retroceder hasta 1 (nuevo timbrado). No se puede retroceder a un número intermedio.
+          La DNIT exige correlatividad ininterrumpida.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Nuevo número desde</label>
+            <input
+              type="number"
+              min={1}
+              max={9999999}
+              value={resetNum}
+              onChange={e => { setResetNum(e.target.value); setResetErr('') }}
+              placeholder="1"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Escribí CONFIRMAR</label>
+            <input
+              value={resetConfirm}
+              onChange={e => { setResetConfirm(e.target.value); setResetErr('') }}
+              placeholder="CONFIRMAR"
+              className="w-full border border-red-200 rounded-lg px-3 py-2 text-sm font-mono"
+            />
+          </div>
+        </div>
+        {resetErr && <p className="text-xs text-red-600">{resetErr}</p>}
+        {resetOk && <p className="text-xs text-green-700 font-medium flex items-center gap-1"><Check size={12} /> Correlativo actualizado</p>}
+        <button
+          onClick={() => { setResetErr(''); mutReset.mutate() }}
+          disabled={mutReset.isPending || !resetNum || resetConfirm !== 'CONFIRMAR'}
+          className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+        >
+          {mutReset.isPending ? 'Procesando...' : 'Resetear correlativo'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Tab Configuración general ────────────────────────────────────────────────
 
 function TabConfig() {
   const qc = useQueryClient()
@@ -409,116 +627,39 @@ function TabConfig() {
   if (!cfg) return null
   const strVal = (k: keyof FacConfig) => String((form[k] !== undefined ? form[k] : cfg[k]) ?? '')
 
-  // Previsualización del próximo número
-  const est = (form.codigo_establecimiento ?? cfg.codigo_establecimiento).padStart(3, '0')
-  const pto = (form.punto_expedicion ?? cfg.punto_expedicion).padStart(3, '0')
-  const nextNum = String(cfg.siguiente_numero).padStart(7, '0')
-  const preview = `${est}-${pto}-${nextNum}`
-
   return (
-    <div className="space-y-5 max-w-lg">
-
-      {/* Numeración paraguaya */}
-      <div>
-        <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Numeración (formato SET)</p>
-        <div className="bg-indigo-50 rounded-xl p-3 mb-3 flex items-center gap-3">
-          <span className="text-xs text-gray-500">Próxima factura:</span>
-          <span className="font-mono font-bold text-indigo-700 text-base">{preview}</span>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1">Código establecimiento</label>
-            <input
-              value={strVal('codigo_establecimiento')}
-              onChange={e => setForm(v => ({ ...v, codigo_establecimiento: e.target.value.slice(0, 3) }))}
-              maxLength={3}
-              placeholder="001"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono"
-            />
+    <div className="space-y-4 max-w-lg">
+      <div className="grid sm:grid-cols-2 gap-3">
+        {([
+          ['ruc', 'RUC emisor'],
+          ['razon_social', 'Razón social'],
+          ['direccion_fiscal', 'Dirección fiscal'],
+          ['telefono_fiscal', 'Teléfono'],
+        ] as [keyof FacConfig, string][]).map(([k, label]) => (
+          <div key={k}>
+            <label className="text-xs font-medium text-gray-600 block mb-1">{label}</label>
+            <input value={strVal(k)} onChange={e => setForm(v => ({ ...v, [k]: e.target.value }))}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
           </div>
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1">Punto de expedición</label>
-            <input
-              value={strVal('punto_expedicion')}
-              onChange={e => setForm(v => ({ ...v, punto_expedicion: e.target.value.slice(0, 3) }))}
-              maxLength={3}
-              placeholder="001"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono"
-            />
-          </div>
+        ))}
+        <div>
+          <label className="text-xs font-medium text-gray-600 block mb-1">IVA por defecto</label>
+          <select value={strVal('tasa_iva_default')} onChange={e => setForm(v => ({ ...v, tasa_iva_default: e.target.value as TasaIVA }))}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+            <option value="IVA_10">10%</option>
+            <option value="IVA_5">5%</option>
+            <option value="EXENTO">Exento</option>
+          </select>
         </div>
       </div>
-
-      {/* Timbrado SET */}
-      <div>
-        <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Timbrado SET</p>
-        <div className="grid sm:grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1">N° Timbrado</label>
-            <input
-              value={strVal('timbrado')}
-              onChange={e => setForm(v => ({ ...v, timbrado: e.target.value }))}
-              placeholder="12345678"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1">Vigencia desde</label>
-            <input
-              type="date"
-              value={strVal('timbrado_vigencia_desde').slice(0, 10)}
-              onChange={e => setForm(v => ({ ...v, timbrado_vigencia_desde: e.target.value || null }))}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1">Vigencia hasta</label>
-            <input
-              type="date"
-              value={strVal('timbrado_vigencia_hasta').slice(0, 10)}
-              onChange={e => setForm(v => ({ ...v, timbrado_vigencia_hasta: e.target.value || null }))}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Datos del emisor */}
-      <div>
-        <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Datos del emisor</p>
-        <div className="grid sm:grid-cols-2 gap-3">
-          {([
-            ['ruc', 'RUC emisor'],
-            ['razon_social', 'Razón social'],
-            ['direccion_fiscal', 'Dirección fiscal'],
-            ['telefono_fiscal', 'Teléfono'],
-          ] as [keyof FacConfig, string][]).map(([k, label]) => (
-            <div key={k}>
-              <label className="text-xs font-medium text-gray-600 block mb-1">{label}</label>
-              <input value={strVal(k)} onChange={e => setForm(v => ({ ...v, [k]: e.target.value }))}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
-            </div>
-          ))}
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1">IVA por defecto</label>
-            <select value={strVal('tasa_iva_default')} onChange={e => setForm(v => ({ ...v, tasa_iva_default: e.target.value as TasaIVA }))}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
-              <option value="IVA_10">10%</option>
-              <option value="IVA_5">5%</option>
-              <option value="EXENTO">Exento</option>
-            </select>
-          </div>
-        </div>
-        <label className="flex items-center gap-2 text-sm text-gray-700 mt-3">
-          <input type="checkbox" checked={Boolean(form.precio_incluye_iva ?? cfg.precio_incluye_iva)}
-            onChange={e => setForm(v => ({ ...v, precio_incluye_iva: e.target.checked }))} />
-          Los precios incluyen IVA por defecto
-        </label>
-      </div>
-
+      <label className="flex items-center gap-2 text-sm text-gray-700">
+        <input type="checkbox" checked={Boolean(form.precio_incluye_iva ?? cfg.precio_incluye_iva)}
+          onChange={e => setForm(v => ({ ...v, precio_incluye_iva: e.target.checked }))} />
+        Los precios incluyen IVA por defecto
+      </label>
       <button onClick={() => mut.mutate()} disabled={mut.isPending}
         className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
-        {saved ? <><Check size={14} /> Guardado</> : mut.isPending ? 'Guardando...' : 'Guardar configuración'}
+        {saved ? <><Check size={14} /> Guardado</> : mut.isPending ? 'Guardando...' : 'Guardar'}
       </button>
     </div>
   )
@@ -526,7 +667,7 @@ function TabConfig() {
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 
-type Tab = 'facturas' | 'nueva' | 'clientes' | 'config'
+type Tab = 'facturas' | 'nueva' | 'clientes' | 'numeracion' | 'config'
 
 export default function Facturacion() {
   const [tab, setTab] = useState<Tab>('facturas')
@@ -555,6 +696,7 @@ export default function Facturacion() {
     { id: 'facturas', label: 'Facturas', icon: FileText },
     { id: 'nueva', label: 'Nueva', icon: Plus },
     { id: 'clientes', label: 'Clientes', icon: Users },
+    { id: 'numeracion', label: 'Numeración', icon: Hash },
     { id: 'config', label: 'Config.', icon: Settings },
   ]
 
@@ -604,6 +746,7 @@ export default function Facturacion() {
       )}
 
       {tab === 'clientes' && <TabClientes />}
+      {tab === 'numeracion' && <TabNumeracion />}
       {tab === 'config' && <TabConfig />}
 
       {pagarFactura && (

@@ -10,7 +10,7 @@ from app.models.facturacion.models import (
     Factura, FacturaItem, FacturaPago, FacConfig, FacCliente,
     TasaIVA, EstadoFactura, CondicionVenta,
 )
-from app.services.facturacion import calcular_item_iva, calcular_totales
+from app.services.facturacion import calcular_item_iva, calcular_totales, generar_numero_factura
 
 router = APIRouter(prefix="/facturacion/facturas", tags=["facturacion"])
 
@@ -176,10 +176,9 @@ async def create_factura(
 
     totales = calcular_totales(items_calc)
 
-    # Generar número correlativo formato paraguayo: XXX-YYY-NNNNNNN
+    # Generar número correlativo formato DNIT paraguayo
     cfg = await _get_or_create_config(org.id, db)
-    numero = f"{cfg.codigo_establecimiento}-{cfg.punto_expedicion}-{cfg.siguiente_numero:07d}"
-    cfg.siguiente_numero += 1
+    numero, cfg.siguiente_numero, cfg.serie = generar_numero_factura(cfg)
 
     factura = Factura(
         organizacion_id=org.id,

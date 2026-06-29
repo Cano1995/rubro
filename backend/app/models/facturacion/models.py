@@ -30,10 +30,13 @@ class FacConfig(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     organizacion_id: Mapped[int] = mapped_column(Integer, ForeignKey("organizaciones.id"), unique=True)
 
-    # Numeración paraguaya: XXX-YYY-NNNNNNN
+    # Numeración paraguaya DNIT: XXX-YYY-NNNNNNN (13 dígitos + guiones)
     codigo_establecimiento: Mapped[str] = mapped_column(String(3), default="001")
     punto_expedicion: Mapped[str] = mapped_column(String(3), default="001")
     siguiente_numero: Mapped[int] = mapped_column(Integer, default=1)
+    # Serie alfanumérica de 2 chars para e-kuatia: se activa al superar 9999999
+    # Progresión: None → "AA" → "AB" → ... → "AZ" → "BA" → ... → "ZZ"
+    serie: Mapped[str | None] = mapped_column(String(2), nullable=True)
 
     # Timbrado SET (autorización de emisión)
     timbrado: Mapped[str | None] = mapped_column(String(20))

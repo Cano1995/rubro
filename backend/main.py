@@ -33,6 +33,7 @@ from app.routers.roperia import ventas as rop_ventas
 from app.routers.facturacion import config as fac_config
 from app.routers.facturacion import clientes as fac_clientes
 from app.routers.facturacion import facturas as fac_facturas
+from app.routers.facturacion import numeracion as fac_numeracion
 
 # Reportes y notificaciones
 from app.routers import reportes, notificaciones
@@ -123,6 +124,7 @@ app.include_router(rop_ventas.router)
 app.include_router(fac_config.router)
 app.include_router(fac_clientes.router)
 app.include_router(fac_facturas.router)
+app.include_router(fac_numeracion.router)
 
 # --- Reportes y notificaciones ---
 app.include_router(reportes.router)
