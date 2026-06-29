@@ -11,6 +11,7 @@ from app.models.facturacion.models import (
     TasaIVA, EstadoFactura, CondicionVenta,
 )
 from app.services.facturacion import calcular_item_iva, calcular_totales, generar_numero_factura
+from app.services import elec_cano_client
 
 router = APIRouter(prefix="/facturacion/facturas", tags=["facturacion"])
 
@@ -85,6 +86,10 @@ class FacturaOut(BaseModel):
     cliente: ClienteBasicoOut | None
     items: list[ItemOut]
     pagos: list[PagoOut]
+    # Factura electrónica SIFEN
+    cdc: str | None = None
+    qr_base64: str | None = None
+    estado_sifen: str | None = None
 
     class Config:
         from_attributes = True
@@ -95,6 +100,11 @@ class PagoIn(BaseModel):
     metodo_pago: str = "efectivo"
     referencia: str | None = None
     notas: str | None = None
+
+
+class EmitirElectronicaIn(BaseModel):
+    tipo_transaccion: int = 3  # 1=venta mercadería, 2=servicios, 3=mixto
+    enviar_sifen: bool = True
 
 
 # ─── Helper ───────────────────────────────────────────────────────────────────
@@ -253,4 +263,73 @@ async def cancelar_factura(
     if factura.estado == EstadoFactura.CANCELADA:
         raise HTTPException(400, "La factura ya está cancelada")
     factura.estado = EstadoFactura.CANCELADA
+    return factura
+
+
+@router.post("/{factura_id}/emitir-electronica", response_model=FacturaOut)
+async def emitir_electronica(
+    factura_id: int,
+    data: EmitirElectronicaIn = EmitirElectronicaIn(),
+    org=Depends(get_current_org),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Emite la factura como Documento Electrónico SIFEN via elec-cano.
+    Requiere configurar elec_url y elec_api_key en la config de facturación.
+    """
+    factura = await _load_factura(factura_id, org.id, db)
+    if factura.estado == EstadoFactura.CANCELADA:
+        raise HTTPException(400, "No se puede emitir electrónicamente una factura cancelada")
+    if factura.cdc:
+        raise HTTPException(400, f"Factura ya emitida electrónicamente (CDC: {factura.cdc})")
+
+    cfg = await _get_or_create_config(org.id, db)
+    try:
+        resultado = await elec_cano_client.emitir_electronica(factura, cfg, data.tipo_transaccion, data.enviar_sifen)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"Error al conectar con elec-cano: {str(e)}")
+
+    if not resultado.get("success"):
+        raise HTTPException(422, resultado.get("error", "SIFEN rechazó el documento"))
+
+    factura.cdc = resultado.get("cdc")
+    factura.qr_base64 = resultado.get("qr")
+    factura.estado_sifen = resultado.get("estado", "generado")
+
+    await db.flush()
+    await db.refresh(factura, ["items", "pagos", "cliente"])
+    return factura
+
+
+class CancelarElectronicaIn(BaseModel):
+    motivo: str = "Cancelación solicitada por el emisor"
+
+
+@router.post("/{factura_id}/cancelar-electronica", response_model=FacturaOut)
+async def cancelar_electronica(
+    factura_id: int,
+    data: CancelarElectronicaIn = CancelarElectronicaIn(),
+    org=Depends(get_current_org),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancela el DE aprobado en SIFEN y marca la factura como cancelada."""
+    factura = await _load_factura(factura_id, org.id, db)
+    if not factura.cdc:
+        raise HTTPException(400, "Esta factura no tiene un DE emitido")
+    if factura.estado_sifen not in ("aprobado", "generado"):
+        raise HTTPException(400, "Solo se pueden cancelar DE aprobados o generados")
+
+    cfg = await _get_or_create_config(org.id, db)
+    try:
+        await elec_cano_client.cancelar_electronica(factura.cdc, data.motivo, cfg)
+    except Exception as e:
+        raise HTTPException(502, str(e))
+
+    factura.estado_sifen = "cancelado"
+    factura.estado = EstadoFactura.CANCELADA
+
+    await db.flush()
+    await db.refresh(factura, ["items", "pagos", "cliente"])
     return factura

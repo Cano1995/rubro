@@ -1,6 +1,6 @@
 import { useState, type ElementType } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { FileText, Plus, Users, Settings, Check, X, ChevronDown, ChevronUp, Trash2, Hash } from 'lucide-react'
+import { FileText, Plus, Users, Settings, Check, X, ChevronDown, ChevronUp, Trash2, Hash, Zap } from 'lucide-react'
 import apiClient from '../api/client'
 import { clsx } from 'clsx'
 
@@ -10,7 +10,7 @@ type EstadoFactura = 'pendiente' | 'pagada' | 'cancelada' | 'vencida'
 interface FacCliente { id: number; nombre: string; ruc: string | null; email: string | null; telefono: string | null }
 interface ItemOut { id: number; descripcion: string; cantidad: number; precio_unitario: number; tasa_iva: TasaIVA; precio_incluye_iva: boolean; subtotal: number; monto_iva: number; total: number }
 interface PagoOut { id: number; monto: number; fecha: string; metodo_pago: string }
-interface FacturaOut { id: number; numero: string; fecha: string; condicion: string; estado: EstadoFactura; total_base: number; total_iva10: number; total_iva5: number; total_exento: number; total_general: number; notas: string | null; cliente: { id: number; nombre: string; ruc: string | null } | null; items: ItemOut[]; pagos: PagoOut[] }
+interface FacturaOut { id: number; numero: string; fecha: string; condicion: string; estado: EstadoFactura; total_base: number; total_iva10: number; total_iva5: number; total_exento: number; total_general: number; notas: string | null; cliente: { id: number; nombre: string; ruc: string | null } | null; items: ItemOut[]; pagos: PagoOut[]; cdc: string | null; qr_base64: string | null; estado_sifen: string | null }
 interface FacConfig {
   codigo_establecimiento: string
   punto_expedicion: string
@@ -24,6 +24,8 @@ interface FacConfig {
   razon_social: string | null
   direccion_fiscal: string | null
   telefono_fiscal: string | null
+  elec_url: string | null
+  elec_api_key: string | null
 }
 
 const TASA_LABELS: Record<TasaIVA, string> = { IVA_10: 'IVA 10%', IVA_5: 'IVA 5%', EXENTO: 'Exento' }
@@ -38,7 +40,19 @@ function gs(n: number) { return `Gs. ${Math.round(n).toLocaleString('es-PY')}` }
 
 // ─── Lista de Facturas ────────────────────────────────────────────────────────
 
-function FilaFactura({ f, onPagar, onCancelar }: { f: FacturaOut; onPagar: () => void; onCancelar: () => void }) {
+const SIFEN_COLORS: Record<string, string> = {
+  aprobado: 'bg-green-100 text-green-800',
+  generado: 'bg-blue-100 text-blue-700',
+  rechazado: 'bg-red-100 text-red-700',
+  cancelado: 'bg-gray-100 text-gray-600',
+}
+
+function FilaFactura({ f, onPagar, onCancelar, onEmitirElec }: {
+  f: FacturaOut
+  onPagar: () => void
+  onCancelar: () => void
+  onEmitirElec: () => void
+}) {
   const [open, setOpen] = useState(false)
   return (
     <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -52,9 +66,15 @@ function FilaFactura({ f, onPagar, onCancelar }: { f: FacturaOut; onPagar: () =>
             <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', ESTADO_COLORS[f.estado])}>
               {f.estado}
             </span>
+            {f.estado_sifen && (
+              <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium flex items-center gap-1', SIFEN_COLORS[f.estado_sifen] ?? 'bg-gray-100 text-gray-600')}>
+                <Zap size={9} /> {f.estado_sifen}
+              </span>
+            )}
           </div>
           <p className="text-xs text-gray-500 mt-0.5">
             {f.cliente?.nombre ?? 'Sin cliente'} · {new Date(f.fecha).toLocaleDateString('es-PY')}
+            {f.cdc && <span className="ml-2 font-mono text-indigo-500">CDC: {f.cdc.slice(0, 8)}…</span>}
           </p>
         </div>
         <span className="font-bold text-gray-800 text-sm shrink-0">{gs(f.total_general)}</span>
@@ -98,6 +118,18 @@ function FilaFactura({ f, onPagar, onCancelar }: { f: FacturaOut; onPagar: () =>
             </div>
           </div>
 
+          {/* QR de factura electrónica */}
+          {f.qr_base64 && (
+            <div className="flex items-start gap-3 bg-indigo-50 rounded-lg p-3">
+              <img src={`data:image/png;base64,${f.qr_base64}`} alt="QR SIFEN" className="w-20 h-20 rounded" />
+              <div className="text-xs space-y-1">
+                <p className="font-bold text-indigo-700 flex items-center gap-1"><Zap size={11} /> Documento Electrónico</p>
+                <p className="text-gray-600">Estado SIFEN: <span className="font-medium">{f.estado_sifen}</span></p>
+                <p className="font-mono text-gray-500 break-all text-[10px]">CDC: {f.cdc}</p>
+              </div>
+            </div>
+          )}
+
           {/* Pagos registrados */}
           {f.pagos.length > 0 && (
             <div className="text-xs space-y-1">
@@ -112,13 +144,21 @@ function FilaFactura({ f, onPagar, onCancelar }: { f: FacturaOut; onPagar: () =>
           )}
 
           {/* Acciones */}
-          <div className="flex gap-2 pt-1">
+          <div className="flex gap-2 pt-1 flex-wrap">
             {f.estado === 'pendiente' && (
               <button
                 onClick={onPagar}
                 className="flex items-center gap-1 text-xs bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 transition-colors"
               >
                 <Check size={12} /> Registrar pago
+              </button>
+            )}
+            {!f.cdc && f.estado !== 'cancelada' && (
+              <button
+                onClick={onEmitirElec}
+                className="flex items-center gap-1 text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 transition-colors"
+              >
+                <Zap size={12} /> Emitir e-factura
               </button>
             )}
             {f.estado !== 'cancelada' && f.estado !== 'pagada' && (
@@ -657,6 +697,27 @@ function TabConfig() {
           onChange={e => setForm(v => ({ ...v, precio_incluye_iva: e.target.checked }))} />
         Los precios incluyen IVA por defecto
       </label>
+
+      <hr className="border-gray-100" />
+
+      {/* Integración elec-cano */}
+      <div className="space-y-3">
+        <p className="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1.5"><Zap size={12} /> Factura Electrónica SIFEN (elec-cano)</p>
+        <p className="text-xs text-gray-400">URL y API Key del microservicio elec-cano para emitir DEs a SIFEN. Dejá vacío si no usás factura electrónica.</p>
+        <div>
+          <label className="text-xs font-medium text-gray-600 block mb-1">URL de elec-cano</label>
+          <input value={strVal('elec_url')} onChange={e => setForm(v => ({ ...v, elec_url: e.target.value }))}
+            placeholder="http://localhost:8001"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono" />
+        </div>
+        <div>
+          <label className="text-xs font-medium text-gray-600 block mb-1">API Key</label>
+          <input type="password" value={strVal('elec_api_key')} onChange={e => setForm(v => ({ ...v, elec_api_key: e.target.value }))}
+            placeholder="tu-api-key-secreta"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono" />
+        </div>
+      </div>
+
       <button onClick={() => mut.mutate()} disabled={mut.isPending}
         className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
         {saved ? <><Check size={14} /> Guardado</> : mut.isPending ? 'Guardando...' : 'Guardar'}
@@ -689,6 +750,11 @@ export default function Facturacion() {
 
   const cancelarMut = useMutation({
     mutationFn: (id: number) => apiClient.post(`/facturacion/facturas/${id}/cancelar`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['facturas'] }),
+  })
+
+  const emitirElecMut = useMutation({
+    mutationFn: (id: number) => apiClient.post(`/facturacion/facturas/${id}/emitir-electronica`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['facturas'] }),
   })
 
@@ -736,6 +802,7 @@ export default function Facturacion() {
             <FilaFactura key={f.id} f={f}
               onPagar={() => setPagarFactura(f)}
               onCancelar={() => cancelarMut.mutate(f.id)}
+              onEmitirElec={() => emitirElecMut.mutate(f.id)}
             />
           ))}
         </div>

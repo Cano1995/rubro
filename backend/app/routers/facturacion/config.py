@@ -23,6 +23,9 @@ class FacConfigOut(BaseModel):
     razon_social: str | None
     direccion_fiscal: str | None
     telefono_fiscal: str | None
+    # Integración elec-cano
+    elec_url: str | None
+    elec_api_key: str | None
 
     class Config:
         from_attributes = True
@@ -40,6 +43,8 @@ class FacConfigUpdate(BaseModel):
     razon_social: str | None = None
     direccion_fiscal: str | None = None
     telefono_fiscal: str | None = None
+    elec_url: str | None = None
+    elec_api_key: str | None = None
 
 
 async def _get_or_create(org_id: int, db: AsyncSession) -> FacConfig:

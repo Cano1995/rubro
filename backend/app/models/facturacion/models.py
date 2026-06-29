@@ -52,6 +52,10 @@ class FacConfig(Base):
     direccion_fiscal: Mapped[str | None] = mapped_column(String(300))
     telefono_fiscal: Mapped[str | None] = mapped_column(String(30))
 
+    # Integración elec-cano (facturación electrónica SIFEN)
+    elec_url: Mapped[str | None] = mapped_column(String(500))
+    elec_api_key: Mapped[str | None] = mapped_column(String(200))
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -94,6 +98,11 @@ class Factura(Base):
 
     estado: Mapped[EstadoFactura] = mapped_column(Enum(EstadoFactura), default=EstadoFactura.PENDIENTE)
     notas: Mapped[str | None] = mapped_column(Text)
+
+    # Factura electrónica SIFEN (via elec-cano)
+    cdc: Mapped[str | None] = mapped_column(String(44))
+    qr_base64: Mapped[str | None] = mapped_column(Text)
+    estado_sifen: Mapped[str | None] = mapped_column(String(20))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
