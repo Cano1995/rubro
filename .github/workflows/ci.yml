@@ -100,12 +100,14 @@ jobs:
         run: npm install -g @railway/cli
 
       - name: Deploy backend
+        if: ${{ secrets.RAILWAY_TOKEN != '' && secrets.RAILWAY_BACKEND_ID != '' }}
         run: railway up --service ${{ secrets.RAILWAY_BACKEND_ID }} --detach
         working-directory: backend
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
       - name: Deploy frontend
+        if: ${{ secrets.RAILWAY_TOKEN != '' && secrets.RAILWAY_FRONTEND_ID != '' }}
         run: railway up --service ${{ secrets.RAILWAY_FRONTEND_ID }} --detach
         working-directory: frontend
         env:
