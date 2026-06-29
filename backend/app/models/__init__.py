@@ -12,3 +12,4 @@ from app.models.belleza.cita import CitaBelleza
 from app.models.roperia.categoria import Categoria
 from app.models.roperia.producto import Producto
 from app.models.roperia.venta import Venta, ItemVenta
+from app.models.facturacion.models import FacConfig, FacCliente, Factura, FacturaItem, FacturaPago

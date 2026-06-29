@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Stethoscope, Calendar, ClipboardList, Syringe,
   Scissors, Users, Briefcase, ShoppingBag, Package, CreditCard,
-  Settings, Shield, X, BarChart2
+  Settings, Shield, X, BarChart2, FileText
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { Organizacion } from '../../api/organizacion'
@@ -100,6 +100,7 @@ export default function Sidebar({ org, open, onClose }: SidebarProps) {
 
         {/* Footer */}
         <div className="border-t border-gray-100 p-2 space-y-1">
+          <NavItem to="/facturacion" icon={FileText} label="Facturación" />
           <NavItem to="/reportes" icon={BarChart2} label="Reportes" />
           <NavItem to="/configuracion" icon={Settings} label="Configuración" />
           <NavItem to="/admin" icon={Shield} label="Superadmin" />

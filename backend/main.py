@@ -29,6 +29,11 @@ from app.routers.roperia import productos as rop_productos
 from app.routers.roperia import categorias as rop_categorias
 from app.routers.roperia import ventas as rop_ventas
 
+# Módulo facturación (transversal a todos los rubros)
+from app.routers.facturacion import config as fac_config
+from app.routers.facturacion import clientes as fac_clientes
+from app.routers.facturacion import facturas as fac_facturas
+
 # Reportes y notificaciones
 from app.routers import reportes, notificaciones
 
@@ -113,6 +118,11 @@ app.include_router(bel_staff.router)
 app.include_router(rop_categorias.router)
 app.include_router(rop_productos.router)
 app.include_router(rop_ventas.router)
+
+# --- Módulo: facturación ---
+app.include_router(fac_config.router)
+app.include_router(fac_clientes.router)
+app.include_router(fac_facturas.router)
 
 # --- Reportes y notificaciones ---
 app.include_router(reportes.router)

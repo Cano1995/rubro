@@ -33,6 +33,9 @@ import RopProductos from './pages/roperia/Productos'
 import RopVentas from './pages/roperia/Ventas'
 import RopCategorias from './pages/roperia/Categorias'
 
+// Facturación (transversal)
+import Facturacion from './pages/Facturacion'
+
 // Reportes
 import Reportes from './pages/Reportes'
 
@@ -90,6 +93,9 @@ function AppShell() {
             <Route path="/roperia/productos" element={<RopProductos />} />
             <Route path="/roperia/ventas" element={<RopVentas />} />
             <Route path="/roperia/categorias" element={<RopCategorias />} />
+
+            {/* Facturación */}
+            <Route path="/facturacion" element={<Facturacion />} />
 
             {/* Base */}
             <Route path="/reportes" element={<Reportes />} />
