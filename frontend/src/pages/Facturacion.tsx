@@ -1,6 +1,6 @@
 import { useState, type ElementType } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { FileText, Plus, Users, Settings, Check, X, ChevronDown, ChevronUp, Trash2, Hash, Zap } from 'lucide-react'
+import { FileText, Plus, Users, Settings, Check, X, ChevronDown, ChevronUp, Trash2, Hash, Zap, ShieldCheck, Upload } from 'lucide-react'
 import apiClient from '../api/client'
 import { clsx } from 'clsx'
 
@@ -655,6 +655,105 @@ function TabNumeracion() {
 
 // ─── Tab Configuración general ────────────────────────────────────────────────
 
+interface ContribuyenteEstado {
+  registrado?: boolean
+  tiene_certificado?: boolean
+  razon_social?: string
+  timbrado?: string
+}
+
+function CertificadoContribuyente() {
+  const qc = useQueryClient()
+  const [archivo, setArchivo] = useState<File | null>(null)
+  const [password, setPassword] = useState('')
+  const [syncMsg, setSyncMsg] = useState<string | null>(null)
+
+  const { data: estado, isLoading } = useQuery<ContribuyenteEstado | null>({
+    queryKey: ['fac-contribuyente-estado'],
+    queryFn: () => apiClient.get('/facturacion/config/contribuyente/estado').then(r => r.data),
+  })
+
+  const syncMut = useMutation({
+    mutationFn: () => apiClient.post('/facturacion/config/contribuyente/sincronizar'),
+    onSuccess: () => { setSyncMsg('Datos sincronizados con elec-cano.'); qc.invalidateQueries({ queryKey: ['fac-contribuyente-estado'] }) },
+    onError: (e: any) => setSyncMsg(e?.response?.data?.detail || 'No se pudo sincronizar.'),
+  })
+
+  const uploadMut = useMutation({
+    mutationFn: () => {
+      const fd = new FormData()
+      fd.append('archivo', archivo as File)
+      fd.append('password', password)
+      return apiClient.post('/facturacion/config/contribuyente/certificado', fd)
+    },
+    onSuccess: () => { setArchivo(null); setPassword(''); qc.invalidateQueries({ queryKey: ['fac-contribuyente-estado'] }) },
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: () => apiClient.delete('/facturacion/config/contribuyente/certificado'),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['fac-contribuyente-estado'] }),
+  })
+
+  const registrado = estado?.registrado !== false && estado != null
+  const tieneCert = Boolean(estado?.tiene_certificado)
+
+  return (
+    <div className="space-y-3 pt-3 border-t border-gray-100">
+      <p className="text-xs font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1.5">
+        <ShieldCheck size={12} /> Certificado de firma digital
+      </p>
+      <p className="text-xs text-gray-400">
+        elec-cano es multi-organización: cada empresa firma con su propio certificado y timbrado.
+        Primero sincronizá tu RUC y timbrado, luego subí tu certificado .pfx/.p12.
+      </p>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={() => syncMut.mutate()} disabled={syncMut.isPending}
+          className="text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-50">
+          {syncMut.isPending ? 'Sincronizando...' : '1. Sincronizar RUC y timbrado'}
+        </button>
+        {!isLoading && (
+          registrado
+            ? <span className="text-xs text-green-700">RUC registrado en elec-cano</span>
+            : <span className="text-xs text-gray-400">RUC aún no registrado en elec-cano</span>
+        )}
+      </div>
+      {syncMsg && <p className="text-xs text-gray-500">{syncMsg}</p>}
+
+      <div className="flex items-center gap-2">
+        {tieneCert
+          ? <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700"><ShieldCheck size={9} /> Certificado cargado</span>
+          : <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">Sin certificado</span>}
+        {tieneCert && (
+          <button onClick={() => deleteMut.mutate()} disabled={deleteMut.isPending}
+            className="text-xs text-red-600 hover:underline">Eliminar certificado</button>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <div className="flex-1">
+          <label className="text-xs font-medium text-gray-600 block mb-1">Archivo .pfx / .p12</label>
+          <input type="file" accept=".pfx,.p12" onChange={e => setArchivo(e.target.files?.[0] ?? null)}
+            className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-sm" />
+        </div>
+        <div className="flex-1">
+          <label className="text-xs font-medium text-gray-600 block mb-1">Contraseña del certificado</label>
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <button onClick={() => uploadMut.mutate()} disabled={!archivo || !password || uploadMut.isPending}
+          className="flex items-center gap-1.5 bg-indigo-600 text-white px-3 py-2 rounded-lg text-xs font-medium hover:bg-indigo-700 disabled:opacity-50 whitespace-nowrap">
+          <Upload size={12} /> {uploadMut.isPending ? 'Subiendo...' : '2. Subir certificado'}
+        </button>
+      </div>
+      {uploadMut.isError && <p className="text-xs text-red-600">No se pudo subir el certificado. Verificá el archivo y la contraseña.</p>}
+      <p className="text-xs text-gray-400">
+        La contraseña se cifra antes de guardarse en elec-cano y nunca queda en texto plano.
+      </p>
+    </div>
+  )
+}
+
 function TabConfig() {
   const qc = useQueryClient()
   const { data: cfg } = useQuery<FacConfig>({ queryKey: ['fac-config'], queryFn: () => apiClient.get('/facturacion/config/').then(r => r.data) })
@@ -726,6 +825,7 @@ function TabConfig() {
                 placeholder="tu-api-key-secreta"
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono" />
             </div>
+            <CertificadoContribuyente />
           </>
         ) : (
           <p className="text-xs text-gray-400">El servicio de factura electrónica no está activado para tu cuenta. Contactá al administrador.</p>

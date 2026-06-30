@@ -17,6 +17,12 @@ _FORMA_PAGO_MAP = {
 }
 
 
+def _split_ruc(ruc: str) -> tuple[str, str]:
+    """Separa '80069563-1' en ('80069563', '1')."""
+    parts = ruc.replace(" ", "").split("-")
+    return parts[0], (parts[1] if len(parts) > 1 else "0")
+
+
 def _precio_con_iva(precio: float, incluye_iva: bool, tasa_str: str) -> float:
     """
     elec-cano siempre espera el precio incluyendo IVA (extrae el IVA internamente).
@@ -110,6 +116,9 @@ def _build_payload(factura: Factura, cfg: FacConfig, tipo_transaccion: int = 3, 
         "items": items,
         "enviar_sifen": enviar_sifen,
     }
+    if cfg.ruc:
+        ruc_emisor, _ = _split_ruc(cfg.ruc)
+        payload["ruc_emisor"] = ruc_emisor
     if serie:
         payload["serie"] = serie
     if pagos:
@@ -154,11 +163,88 @@ async def cancelar_electronica(cdc: str, motivo: str, cfg: FacConfig) -> dict:
     if not cfg.elec_url or not cfg.elec_api_key:
         raise ValueError("Configurá la URL y API Key de elec-cano")
 
+    body: dict = {"cdc": cdc, "motivo": motivo}
+    if cfg.ruc:
+        ruc_emisor, _ = _split_ruc(cfg.ruc)
+        body["ruc_emisor"] = ruc_emisor
+
     url = cfg.elec_url.rstrip("/") + "/api/v1/evento/cancelar"
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(url, json=body, headers={"X-API-Key": cfg.elec_api_key})
+    return resp.json()
+
+
+async def sincronizar_contribuyente(cfg: FacConfig) -> dict:
+    """
+    Registra/actualiza en elec-cano los datos fiscales del contribuyente
+    (RUC, DV, razón social, timbrado) — necesario antes de poder emitir o
+    de subir el certificado de firma, ya que elec-cano es multi-tenant por RUC.
+    """
+    if not cfg.elec_url or not cfg.elec_api_key:
+        raise ValueError("Configurá la URL y API Key de elec-cano")
+    if not cfg.ruc or not cfg.razon_social or not cfg.timbrado:
+        raise ValueError("Completá RUC, razón social y timbrado antes de sincronizar con elec-cano")
+
+    ruc, dv = _split_ruc(cfg.ruc)
+    payload = {
+        "dv": dv,
+        "razon_social": cfg.razon_social,
+        "nombre_comercial": cfg.razon_social,
+        "timbrado": cfg.timbrado,
+        "timbrado_inicio_vigencia": (
+            cfg.timbrado_vigencia_desde.strftime("%Y-%m-%d") if cfg.timbrado_vigencia_desde else "2024-01-01"
+        ),
+    }
+    url = f"{cfg.elec_url.rstrip('/')}/api/v1/contribuyentes/{ruc}"
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.put(url, json=payload, headers={"X-API-Key": cfg.elec_api_key})
+    if resp.status_code >= 400:
+        raise RuntimeError(f"elec-cano rechazó el registro del contribuyente ({resp.status_code}): {resp.text[:300]}")
+    return resp.json()
+
+
+async def subir_certificado(cfg: FacConfig, archivo_bytes: bytes, filename: str, password: str) -> dict:
+    """Sube el certificado PFX del contribuyente a elec-cano (la contraseña se cifra del lado de elec-cano)."""
+    if not cfg.elec_url or not cfg.elec_api_key:
+        raise ValueError("Configurá la URL y API Key de elec-cano")
+    if not cfg.ruc:
+        raise ValueError("Configurá el RUC antes de subir el certificado")
+
+    ruc, _ = _split_ruc(cfg.ruc)
+    url = f"{cfg.elec_url.rstrip('/')}/api/v1/contribuyentes/{ruc}/certificado"
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
             url,
-            json={"cdc": cdc, "motivo": motivo},
+            files={"archivo": (filename, archivo_bytes, "application/x-pkcs12")},
+            data={"password": password},
             headers={"X-API-Key": cfg.elec_api_key},
         )
+    if resp.status_code >= 400:
+        raise RuntimeError(f"elec-cano rechazó el certificado ({resp.status_code}): {resp.text[:300]}")
+    return resp.json()
+
+
+async def eliminar_certificado(cfg: FacConfig) -> dict:
+    if not cfg.elec_url or not cfg.elec_api_key or not cfg.ruc:
+        raise ValueError("Configurá la URL, API Key y RUC antes de eliminar el certificado")
+
+    ruc, _ = _split_ruc(cfg.ruc)
+    url = f"{cfg.elec_url.rstrip('/')}/api/v1/contribuyentes/{ruc}/certificado"
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.delete(url, headers={"X-API-Key": cfg.elec_api_key})
+    return resp.json()
+
+
+async def estado_contribuyente(cfg: FacConfig) -> dict | None:
+    """Estado del contribuyente en elec-cano (incluye si tiene certificado cargado). None si no está registrado."""
+    if not cfg.elec_url or not cfg.elec_api_key or not cfg.ruc:
+        return None
+
+    ruc, _ = _split_ruc(cfg.ruc)
+    url = f"{cfg.elec_url.rstrip('/')}/api/v1/contribuyentes/{ruc}"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(url, headers={"X-API-Key": cfg.elec_api_key})
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
     return resp.json()
