@@ -1,6 +1,6 @@
 from app.models.organizacion import Organizacion, RubroNegocio, PlanOrg, EstadoOrg
 from app.models.usuario import Usuario, RolUsuario
-from app.models.suscripcion import Suscripcion, EstadoSuscripcion
+from app.models.suscripcion import Suscripcion, EstadoSuscripcion, TipoLicencia
 from app.models.veterinaria.paciente import Paciente
 from app.models.veterinaria.propietario import Propietario
 from app.models.veterinaria.cita import CitaVet

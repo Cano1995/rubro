@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from datetime import datetime, timedelta, timezone
 from app.core.database import get_db
 from app.core.deps import get_current_org, require_superadmin
-from app.models.suscripcion import Suscripcion, EstadoSuscripcion
+from app.models.suscripcion import Suscripcion, EstadoSuscripcion, TipoLicencia
 from app.models.organizacion import Organizacion
 from app.models.usuario import Usuario, RolUsuario
 from app.core.email import send_email, html_alerta_suscripcion
@@ -15,9 +15,12 @@ router = APIRouter(prefix="/suscripciones", tags=["suscripciones"])
 
 class SuscripcionOut(BaseModel):
     id: int
+    tipo: str
     plan: str
     estado: str
     monto_mensual: float | None
+    monto_pago_unico: float | None
+    monto_mantenimiento_anual: float | None
     fecha_inicio: datetime
     fecha_vencimiento: datetime | None
 
@@ -84,8 +87,10 @@ async def enviar_alertas_vencimiento(
             dias=dias,
             plan=sub.plan,
             frontend_url="https://rubro.app",
+            tipo=sub.tipo.value if hasattr(sub.tipo, "value") else sub.tipo,
         )
-        background.add_task(send_email, admin.email, f"Tu suscripción vence en {dias} días — Rubro", html)
+        concepto = "mantenimiento anual" if sub.tipo == TipoLicencia.perpetua else "suscripción"
+        background.add_task(send_email, admin.email, f"Tu {concepto} vence en {dias} días — Rubro", html)
         enviados += 1
 
     return {"mensaje": f"Alertas encoladas para {enviados} organización(es)"}

@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
+    # Días de gracia tras el vencimiento de una suscripción/mantenimiento antes de bloquear el acceso
+    DIAS_GRACIA_VENCIMIENTO: int = 3
+
+    # Secreto compartido para que un cron externo (ej. Railway Cron Job) pueda invocar
+    # endpoints de mantenimiento sin login humano. Vacío = deshabilitado (endpoint solo por JWT superadmin).
+    CRON_SECRET: str = ""
+
     ENVIRONMENT: str = "development"
     DEBUG: bool = True
     PROJECT_NAME: str = "rubro"

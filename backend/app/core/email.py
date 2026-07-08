@@ -28,16 +28,18 @@ async def send_email(to: str, subject: str, html: str) -> bool:
         return False
 
 
-def html_alerta_suscripcion(org_nombre: str, dias: int, plan: str, frontend_url: str) -> str:
+def html_alerta_suscripcion(org_nombre: str, dias: int, plan: str, frontend_url: str, tipo: str = "suscripcion") -> str:
+    es_perpetua = tipo == "perpetua"
+    concepto = "mantenimiento anual" if es_perpetua else "suscripción"
     return f"""
     <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:24px">
-      <h2 style="color:#4f46e5">Rubro — Aviso de suscripción</h2>
-      <p>Hola, te avisamos que la suscripción de <strong>{org_nombre}</strong>
+      <h2 style="color:#4f46e5">Rubro — Aviso de {concepto}</h2>
+      <p>Hola, te avisamos que {'el' if es_perpetua else 'la'} {concepto} de <strong>{org_nombre}</strong>
       (plan <strong>{plan}</strong>) vencerá en <strong>{dias} días</strong>.</p>
       <p>Para renovar o cambiar de plan, ingresá a tu cuenta:</p>
       <a href="{frontend_url}/configuracion"
          style="display:inline-block;background:#4f46e5;color:white;padding:10px 20px;border-radius:8px;text-decoration:none;margin:12px 0">
-        Renovar suscripción
+        Renovar {concepto}
       </a>
       <p style="color:#888;font-size:12px">Si ya renovaste, podés ignorar este mensaje.</p>
     </div>

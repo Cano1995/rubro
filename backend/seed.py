@@ -16,7 +16,7 @@ from app.core.security import hash_password
 # Modelos base
 from app.models.organizacion import Organizacion, RubroNegocio, PlanOrg, EstadoOrg
 from app.models.usuario import Usuario, RolUsuario
-from app.models.suscripcion import Suscripcion, EstadoSuscripcion
+from app.models.suscripcion import Suscripcion, EstadoSuscripcion, TipoLicencia
 
 # Veterinaria
 from app.models.veterinaria.propietario import Propietario
@@ -237,11 +237,14 @@ async def seed():
         db.add_all([bel_admin, bel_staff1])
         await db.flush()
 
+        # Ejemplo de licencia perpetua con mantenimiento anual (en vez de suscripción mensual)
         db.add(Suscripcion(
             organizacion_id=bel_org.id,
+            tipo=TipoLicencia.perpetua,
             plan="basico",
             estado=EstadoSuscripcion.activa,
-            monto_mensual=Decimal("49000"),
+            monto_pago_unico=Decimal("2750000"),
+            monto_mantenimiento_anual=Decimal("300000"),
             fecha_inicio=datetime.utcnow() - timedelta(days=15),
             fecha_vencimiento=datetime.utcnow() + timedelta(days=350),
         ))
@@ -362,6 +365,59 @@ async def seed():
             ItemVenta(venta_id=venta.id, producto_id=prod3.id, cantidad=1, precio_unitario=Decimal("45000"), subtotal=Decimal("45000")),
         ])
 
+        # ─── Org Test: suscripción vencida (para probar el bloqueo de acceso Sprint 5) ──
+        # fecha_vencimiento hace 10 días, supera el período de gracia (3 días por defecto):
+        # loguearse como este org_admin y abrir Pacientes/Citas/etc. debe dar 402 y
+        # redirigir a /configuracion?vencido=1. Correr /admin/sincronizar-vencimientos
+        # debe marcar esta suscripción 'vencida' y suspender la organización.
+        venc_org = Organizacion(
+            nombre="Clínica Test - Vencida",
+            ruc="80099999-9",
+            rubro=RubroNegocio.veterinaria,
+            plan=PlanOrg.basico,
+            estado=EstadoOrg.activa,
+        )
+        db.add(venc_org)
+        await db.flush()
+
+        venc_admin = Usuario(
+            nombre="Test",
+            apellido="Vencido",
+            email="test.vencido@rubro.app",
+            password_hash=hash_password("Test1234!"),
+            rol=RolUsuario.org_admin,
+            activo=True,
+            organizacion_id=venc_org.id,
+        )
+        db.add(venc_admin)
+        await db.flush()
+
+        db.add(Suscripcion(
+            organizacion_id=venc_org.id,
+            tipo=TipoLicencia.suscripcion,
+            plan="basico",
+            estado=EstadoSuscripcion.activa,
+            monto_mensual=Decimal("99000"),
+            fecha_inicio=datetime.utcnow() - timedelta(days=40),
+            fecha_vencimiento=datetime.utcnow() - timedelta(days=10),
+        ))
+
+        venc_prop = Propietario(
+            organizacion_id=venc_org.id,
+            nombre="Cliente",
+            apellido="DePrueba",
+            telefono="0981-000000",
+        )
+        db.add(venc_prop)
+        await db.flush()
+        db.add(Paciente(
+            organizacion_id=venc_org.id,
+            propietario_id=venc_prop.id,
+            nombre="Firulais",
+            especie="Canino",
+            sexo=Sexo.macho,
+        ))
+
         await db.commit()
 
     await engine.dispose()
@@ -371,8 +427,9 @@ async def seed():
     print("Credenciales demo:")
     print("  superadmin:  admin@rubro.app         / Admin1234!")
     print("  veterinaria: maria@huellitas.com     / Demo1234!")
-    print("  belleza:     sofia@glamour.com        / Demo1234!")
+    print("  belleza:     sofia@glamour.com        / Demo1234!  (licencia perpetua + mantenimiento anual)")
     print("  ropería:     diego@modatotal.com      / Demo1234!")
+    print("  test vencida: test.vencido@rubro.app  / Test1234!  (suscripción vencida hace 10 días — para probar el bloqueo 402)")
 
 
 if __name__ == "__main__":

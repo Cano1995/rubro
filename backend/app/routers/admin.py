@@ -4,11 +4,12 @@ from sqlalchemy import select, func
 from pydantic import BaseModel, EmailStr
 from datetime import datetime, timedelta, timezone
 from app.core.database import get_db
-from app.core.deps import require_superadmin
+from app.core.deps import require_superadmin, require_superadmin_or_cron
 from app.core.security import hash_password
+from app.core.config import settings
 from app.models.organizacion import Organizacion, PlanOrg, EstadoOrg, RubroNegocio
 from app.models.usuario import Usuario, RolUsuario
-from app.models.suscripcion import Suscripcion, EstadoSuscripcion
+from app.models.suscripcion import Suscripcion, EstadoSuscripcion, TipoLicencia
 from app.models.facturacion.models import FacConfig
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -26,6 +27,9 @@ class OrgAdminOut(BaseModel):
     created_at: datetime
     total_usuarios: int = 0
     mrr: float = 0.0
+    tipo_licencia: str = "suscripcion"
+    monto_pago_unico: float | None = None
+    monto_mantenimiento_anual: float | None = None
     fecha_vencimiento: datetime | None = None
     factura_electronica_activa: bool = False
 
@@ -37,7 +41,10 @@ class OrgCreate(BaseModel):
     nombre: str
     rubro: RubroNegocio
     plan: PlanOrg = PlanOrg.free
+    tipo_licencia: TipoLicencia = TipoLicencia.suscripcion
     monto_mensual: float | None = None
+    monto_pago_unico: float | None = None
+    monto_mantenimiento_anual: float | None = None
     dias_prueba: int = 30
     admin_nombre: str
     admin_apellido: str
@@ -48,13 +55,17 @@ class OrgCreate(BaseModel):
 class PlanUpdate(BaseModel):
     plan: PlanOrg
     estado: EstadoOrg
+    tipo_licencia: TipoLicencia = TipoLicencia.suscripcion
     fecha_vencimiento: datetime | None = None
     monto_mensual: float | None = None
+    monto_pago_unico: float | None = None
+    monto_mantenimiento_anual: float | None = None
 
 
 class ExtenderSuscripcion(BaseModel):
     dias: int = 30
     monto_mensual: float | None = None
+    monto_mantenimiento_anual: float | None = None
     metodo_pago: str = "transferencia"
     referencia: str | None = None
 
@@ -71,22 +82,48 @@ async def get_stats(_=Depends(require_superadmin), db: AsyncSession = Depends(ge
         select(func.count()).select_from(Organizacion).where(Organizacion.activo == True)
     )
 
-    # MRR: suma de la última suscripción activa por org
-    mrr_result = await db.execute(
-        select(func.coalesce(func.sum(Suscripcion.monto_mensual), 0))
-        .where(Suscripcion.estado == EstadoSuscripcion.activa)
+    # Última suscripción por organización (cada renovación inserta una fila nueva,
+    # así que hay que filtrar a la más reciente por org antes de sumar montos —
+    # sumar todas las filas con estado=activa duplica ingresos en cada renovación).
+    ultima_sub = (
+        select(
+            Suscripcion.organizacion_id,
+            func.max(Suscripcion.created_at).label("ultima_fecha"),
+        )
+        .group_by(Suscripcion.organizacion_id)
+        .subquery()
     )
-    mrr = float(mrr_result.scalar() or 0)
+    ultimas_res = await db.execute(
+        select(Suscripcion).join(
+            ultima_sub,
+            (Suscripcion.organizacion_id == ultima_sub.c.organizacion_id)
+            & (Suscripcion.created_at == ultima_sub.c.ultima_fecha),
+        )
+    )
+    ultimas_suscripciones = ultimas_res.scalars().all()
+    activas = [s for s in ultimas_suscripciones if s.estado == EstadoSuscripcion.activa]
+
+    mrr = sum(float(s.monto_mensual) for s in activas if s.tipo == TipoLicencia.suscripcion and s.monto_mensual)
+    mantenimiento_anual_total = sum(
+        float(s.monto_mantenimiento_anual) for s in activas if s.tipo == TipoLicencia.perpetua and s.monto_mantenimiento_anual
+    )
+    pago_unico_activos = sum(
+        float(s.monto_pago_unico) for s in activas if s.tipo == TipoLicencia.perpetua and s.monto_pago_unico
+    )
+    arr_estimado = mrr * 12 + mantenimiento_anual_total
 
     # Vencimientos en los próximos 7 días
     ahora = datetime.now(tz=timezone.utc)
     en_7_dias = ahora + timedelta(days=7)
-    venc_proximos = await db.scalar(
-        select(func.count()).select_from(Suscripcion).where(
-            Suscripcion.fecha_vencimiento >= ahora,
-            Suscripcion.fecha_vencimiento <= en_7_dias,
-            Suscripcion.estado.in_([EstadoSuscripcion.activa, EstadoSuscripcion.prueba]),
-        )
+    def _venc(s):
+        if s.fecha_vencimiento is None:
+            return None
+        return s.fecha_vencimiento.replace(tzinfo=timezone.utc) if s.fecha_vencimiento.tzinfo is None else s.fecha_vencimiento
+
+    venc_proximos = sum(
+        1 for s in ultimas_suscripciones
+        if s.estado in (EstadoSuscripcion.activa, EstadoSuscripcion.prueba)
+        and _venc(s) is not None and ahora <= _venc(s) <= en_7_dias
     )
 
     # Breakdown por rubro
@@ -101,6 +138,9 @@ async def get_stats(_=Depends(require_superadmin), db: AsyncSession = Depends(ge
         "total_usuarios": total_usuarios,
         "organizaciones_activas": orgs_activas,
         "mrr_guaranies": mrr,
+        "arr_estimado_guaranies": arr_estimado,
+        "mantenimiento_anual_guaranies": mantenimiento_anual_total,
+        "pago_unico_activos_guaranies": pago_unico_activos,
         "vencimientos_proximos_7_dias": venc_proximos or 0,
         "by_rubro": by_rubro,
     }
@@ -129,6 +169,9 @@ async def list_orgs_admin(_=Depends(require_superadmin), db: AsyncSession = Depe
             **org.__dict__,
             "total_usuarios": count or 0,
             "mrr": float(sus.monto_mensual or 0) if sus else 0.0,
+            "tipo_licencia": (sus.tipo.value if hasattr(sus.tipo, "value") else sus.tipo) if sus else "suscripcion",
+            "monto_pago_unico": float(sus.monto_pago_unico) if sus and sus.monto_pago_unico else None,
+            "monto_mantenimiento_anual": float(sus.monto_mantenimiento_anual) if sus and sus.monto_mantenimiento_anual else None,
             "fecha_vencimiento": sus.fecha_vencimiento if sus else None,
             "factura_electronica_activa": fac_cfg.factura_electronica_activa if fac_cfg else False,
         })
@@ -145,24 +188,45 @@ async def create_org(
     if email_exists:
         raise HTTPException(400, "Ya existe un usuario con ese email")
 
+    es_perpetua = data.tipo_licencia == TipoLicencia.perpetua
+
     org = Organizacion(
         nombre=data.nombre,
         rubro=data.rubro,
         plan=data.plan,
-        estado=EstadoOrg.prueba,
+        estado=EstadoOrg.activa if es_perpetua else EstadoOrg.prueba,
         activo=True,
     )
     db.add(org)
     await db.flush()
 
-    vencimiento = datetime.now(tz=timezone.utc) + timedelta(days=data.dias_prueba)
-    sus = Suscripcion(
-        organizacion_id=org.id,
-        plan=data.plan.value,
-        estado=EstadoSuscripcion.prueba,
-        monto_mensual=data.monto_mensual,
-        fecha_vencimiento=vencimiento,
-    )
+    if es_perpetua:
+        # Pago único ya realizado: activa de inmediato. Si hay mantenimiento anual,
+        # fecha_vencimiento marca su próxima renovación; si no, la licencia no vence.
+        vencimiento = (
+            datetime.now(tz=timezone.utc) + timedelta(days=365)
+            if data.monto_mantenimiento_anual
+            else None
+        )
+        sus = Suscripcion(
+            organizacion_id=org.id,
+            tipo=TipoLicencia.perpetua,
+            plan=data.plan.value,
+            estado=EstadoSuscripcion.activa,
+            monto_pago_unico=data.monto_pago_unico,
+            monto_mantenimiento_anual=data.monto_mantenimiento_anual,
+            fecha_vencimiento=vencimiento,
+        )
+    else:
+        vencimiento = datetime.now(tz=timezone.utc) + timedelta(days=data.dias_prueba)
+        sus = Suscripcion(
+            organizacion_id=org.id,
+            tipo=TipoLicencia.suscripcion,
+            plan=data.plan.value,
+            estado=EstadoSuscripcion.prueba,
+            monto_mensual=data.monto_mensual,
+            fecha_vencimiento=vencimiento,
+        )
     db.add(sus)
 
     admin = Usuario(
@@ -195,9 +259,12 @@ async def update_plan(
     org.estado = data.estado
     sus = Suscripcion(
         organizacion_id=org.id,
+        tipo=data.tipo_licencia,
         plan=data.plan.value,
         estado=data.estado.value,
         monto_mensual=data.monto_mensual,
+        monto_pago_unico=data.monto_pago_unico,
+        monto_mantenimiento_anual=data.monto_mantenimiento_anual,
         fecha_vencimiento=data.fecha_vencimiento,
     )
     db.add(sus)
@@ -262,11 +329,18 @@ async def extender_suscripcion(
     base = max(ahora, ultima.fecha_vencimiento.replace(tzinfo=timezone.utc) if ultima and ultima.fecha_vencimiento else ahora)
     nuevo_venc = base + timedelta(days=data.dias)
 
+    tipo_actual = ultima.tipo if ultima else TipoLicencia.suscripcion
+    es_perpetua = tipo_actual == TipoLicencia.perpetua
     nueva_sus = Suscripcion(
         organizacion_id=org_id,
+        tipo=tipo_actual,
         plan=ultima.plan if ultima else org.plan.value,
         estado=EstadoSuscripcion.activa,
-        monto_mensual=data.monto_mensual or (ultima.monto_mensual if ultima else None),
+        monto_mensual=None if es_perpetua else (data.monto_mensual or (ultima.monto_mensual if ultima else None)),
+        monto_pago_unico=ultima.monto_pago_unico if ultima else None,
+        monto_mantenimiento_anual=(
+            (data.monto_mantenimiento_anual or (ultima.monto_mantenimiento_anual if ultima else None)) if es_perpetua else None
+        ),
         fecha_vencimiento=nuevo_venc,
         referencia_pago=data.referencia,
     )
@@ -281,6 +355,51 @@ async def extender_suscripcion(
     }
 
 
+@router.post("/sincronizar-vencimientos")
+async def sincronizar_vencimientos(
+    _=Depends(require_superadmin_or_cron),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Marca 'vencida' la última suscripción de cada organización cuya fecha_vencimiento
+    ya pasó, y suspende la organización si superó el período de gracia sin renovar.
+    Idempotente: pensado para invocarse periódicamente (cron externo, ej. Railway).
+    """
+    ahora = datetime.now(tz=timezone.utc)
+    orgs_res = await db.execute(select(Organizacion).where(Organizacion.activo == True))
+    orgs = orgs_res.scalars().all()
+
+    marcadas = 0
+    suspendidas = 0
+    for org in orgs:
+        sus_res = await db.execute(
+            select(Suscripcion)
+            .where(Suscripcion.organizacion_id == org.id)
+            .order_by(Suscripcion.created_at.desc())
+            .limit(1)
+        )
+        sus = sus_res.scalar_one_or_none()
+        if not sus or sus.fecha_vencimiento is None:
+            continue
+
+        vencimiento = sus.fecha_vencimiento
+        if vencimiento.tzinfo is None:
+            vencimiento = vencimiento.replace(tzinfo=timezone.utc)
+        if vencimiento > ahora:
+            continue
+
+        if sus.estado in (EstadoSuscripcion.activa, EstadoSuscripcion.prueba):
+            sus.estado = EstadoSuscripcion.vencida
+            marcadas += 1
+
+        limite_gracia = vencimiento + timedelta(days=settings.DIAS_GRACIA_VENCIMIENTO)
+        if ahora > limite_gracia and org.estado != EstadoOrg.suspendida:
+            org.estado = EstadoOrg.suspendida
+            suspendidas += 1
+
+    return {"suscripciones_marcadas_vencidas": marcadas, "organizaciones_suspendidas": suspendidas}
+
+
 # ─── Vencimientos próximos ────────────────────────────────────────────────────
 
 @router.get("/vencimientos")
@@ -292,9 +411,25 @@ async def get_vencimientos(
     ahora = datetime.now(tz=timezone.utc)
     limite = ahora + timedelta(days=dias)
 
+    # Solo la última suscripción por org (ver nota en /stats): evita mostrar filas
+    # de renovaciones viejas que quedaron con estado=activa sin invalidar.
+    ultima_sub = (
+        select(
+            Suscripcion.organizacion_id,
+            func.max(Suscripcion.created_at).label("ultima_fecha"),
+        )
+        .group_by(Suscripcion.organizacion_id)
+        .subquery()
+    )
+
     result = await db.execute(
         select(Suscripcion, Organizacion)
         .join(Organizacion, Suscripcion.organizacion_id == Organizacion.id)
+        .join(
+            ultima_sub,
+            (Suscripcion.organizacion_id == ultima_sub.c.organizacion_id)
+            & (Suscripcion.created_at == ultima_sub.c.ultima_fecha),
+        )
         .where(
             Suscripcion.fecha_vencimiento >= ahora,
             Suscripcion.fecha_vencimiento <= limite,
@@ -312,9 +447,11 @@ async def get_vencimientos(
             "org_nombre": org.nombre,
             "rubro": str(org.rubro.value) if hasattr(org.rubro, 'value') else str(org.rubro),
             "plan": sus.plan,
+            "tipo_licencia": sus.tipo.value if hasattr(sus.tipo, 'value') else sus.tipo,
             "estado": str(sus.estado.value) if hasattr(sus.estado, 'value') else str(sus.estado),
             "fecha_vencimiento": sus.fecha_vencimiento.isoformat() if sus.fecha_vencimiento else None,
             "monto_mensual": float(sus.monto_mensual or 0),
+            "monto_mantenimiento_anual": float(sus.monto_mantenimiento_anual or 0),
             "dias_restantes": max(0, (sus.fecha_vencimiento.replace(tzinfo=timezone.utc) - ahora).days),
         })
     return out
