@@ -4,10 +4,13 @@ import { differenceInDays, parseISO } from 'date-fns'
 
 export interface Suscripcion {
   id: number
+  tipo: 'suscripcion' | 'perpetua'
   plan: string
   estado: string
   fecha_vencimiento: string | null
   monto_mensual: number | null
+  monto_pago_unico: number | null
+  monto_mantenimiento_anual: number | null
 }
 
 export function useSuscripcion() {
@@ -19,6 +22,8 @@ export function useSuscripcion() {
 
   const suscripcion = lista?.[0]
 
+  // Una licencia perpetua sin mantenimiento anual (fecha_vencimiento null) no vence nunca.
+  // Si tiene mantenimiento anual, fecha_vencimiento marca su renovación y sí debe avisar.
   const diasRestantes = suscripcion?.fecha_vencimiento
     ? differenceInDays(parseISO(suscripcion.fecha_vencimiento), new Date())
     : null

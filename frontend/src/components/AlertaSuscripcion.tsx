@@ -12,15 +12,20 @@ export default function AlertaSuscripcion() {
   if (suscripcion?.estado === 'prueba' && diasRestantes !== null && diasRestantes > 7) return null
 
   const isPrueba = suscripcion?.estado === 'prueba'
+  const isPerpetuaMantenimiento = suscripcion?.tipo === 'perpetua'
 
   return (
     <div className={`flex items-center gap-3 px-4 py-2.5 text-sm ${vencida ? 'bg-red-600' : 'bg-amber-500'} text-white`}>
       <AlertTriangle size={15} className="shrink-0" />
       <p className="flex-1">
         {vencida
-          ? 'Tu suscripción ha vencido. Algunas funciones pueden estar limitadas.'
+          ? isPerpetuaMantenimiento
+            ? 'Tu mantenimiento anual ha vencido. Algunas funciones pueden estar limitadas.'
+            : 'Tu suscripción ha vencido. Algunas funciones pueden estar limitadas.'
           : isPrueba
           ? `Tu período de prueba vence en ${diasRestantes} día${diasRestantes === 1 ? '' : 's'}.`
+          : isPerpetuaMantenimiento
+          ? `Tu mantenimiento anual vence en ${diasRestantes} día${diasRestantes === 1 ? '' : 's'}.`
           : `Tu suscripción vence en ${diasRestantes} día${diasRestantes === 1 ? '' : 's'}.`
         }
         {' '}

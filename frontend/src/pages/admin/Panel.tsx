@@ -2,7 +2,7 @@ import { useState, Fragment, type ElementType } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Shield, Building2, Users, Activity, TrendingUp, AlertTriangle,
-  Plus, ChevronDown, ChevronUp, Check, X, Clock, Zap,
+  Plus, ChevronDown, ChevronUp, Check, X, Clock, Zap, Wallet, Coins, Banknote,
 } from 'lucide-react'
 import apiClient from '../../api/client'
 import { clsx } from 'clsx'
@@ -14,6 +14,9 @@ interface Stats {
   total_usuarios: number
   organizaciones_activas: number
   mrr_guaranies: number
+  arr_estimado_guaranies: number
+  mantenimiento_anual_guaranies: number
+  pago_unico_activos_guaranies: number
   vencimientos_proximos_7_dias: number
   by_rubro: Record<string, number>
 }
@@ -28,6 +31,9 @@ interface OrgAdmin {
   created_at: string
   total_usuarios: number
   mrr: number
+  tipo_licencia: 'suscripcion' | 'perpetua'
+  monto_pago_unico: number | null
+  monto_mantenimiento_anual: number | null
   fecha_vencimiento: string | null
   factura_electronica_activa: boolean
 }
@@ -38,9 +44,11 @@ interface Vencimiento {
   org_nombre: string
   rubro: string
   plan: string
+  tipo_licencia: 'suscripcion' | 'perpetua'
   estado: string
   fecha_vencimiento: string | null
   monto_mensual: number
+  monto_mantenimiento_anual: number
   dias_restantes: number
 }
 
@@ -92,6 +100,11 @@ const ESTADO_BADGE: Record<string, string> = {
   suspendida: 'bg-red-100 text-red-700',
 }
 
+const TIPO_BADGE: Record<string, string> = {
+  suscripcion: 'bg-indigo-100 text-indigo-700',
+  perpetua: 'bg-teal-100 text-teal-700',
+}
+
 // ─── Tab: Overview ────────────────────────────────────────────────────────────
 
 function KpiCard({ icon: Icon, label, value, sub, alert = false }: {
@@ -125,6 +138,12 @@ function TabOverview({ stats }: { stats: Stats | undefined }) {
         />
       </div>
 
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+        <KpiCard icon={Wallet} label="ARR estimado" value={gs(stats.arr_estimado_guaranies)} sub="MRR×12 + mantenimientos" />
+        <KpiCard icon={Coins} label="Mantenimientos anuales" value={gs(stats.mantenimiento_anual_guaranies)} sub="licencias perpetuas activas" />
+        <KpiCard icon={Banknote} label="Pago único (activos)" value={gs(stats.pago_unico_activos_guaranies)} sub="histórico de licencias perpetuas vigentes" />
+      </div>
+
       <div className="bg-white rounded-2xl border border-gray-100 p-5">
         <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Por rubro</p>
         <div className="flex gap-6">
@@ -148,7 +167,8 @@ function TabOverview({ stats }: { stats: Stats | undefined }) {
 const EMPTY_FORM = {
   nombre: '', rubro: 'veterinaria', plan: 'free',
   admin_nombre: '', admin_apellido: '', admin_email: '', admin_password: '',
-  monto_mensual: '', dias_prueba: '30',
+  tipo_licencia: 'suscripcion', monto_mensual: '', dias_prueba: '30',
+  monto_pago_unico: '', monto_mantenimiento_anual: '',
 }
 
 function TabOrganizaciones() {
@@ -167,6 +187,8 @@ function TabOrganizaciones() {
     mutationFn: () => apiClient.post('/admin/organizaciones', {
       ...form,
       monto_mensual: form.monto_mensual ? Number(form.monto_mensual) : null,
+      monto_pago_unico: form.monto_pago_unico ? Number(form.monto_pago_unico) : null,
+      monto_mantenimiento_anual: form.monto_mantenimiento_anual ? Number(form.monto_mantenimiento_anual) : null,
       dias_prueba: Number(form.dias_prueba),
     }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-orgs'] }); setShowForm(false); setForm(EMPTY_FORM) },
@@ -205,12 +227,11 @@ function TabOrganizaciones() {
               ['admin_apellido', 'Apellido admin'],
               ['admin_email', 'Email admin'],
               ['admin_password', 'Contraseña inicial'],
-              ['monto_mensual', 'Precio mensual (₲)'],
             ] as [keyof typeof EMPTY_FORM, string][]).map(([k, label]) => (
               <div key={k}>
                 <label className="text-xs font-medium text-gray-500 block mb-1">{label}</label>
                 <input
-                  type={k === 'admin_password' ? 'password' : k === 'monto_mensual' ? 'number' : 'text'}
+                  type={k === 'admin_password' ? 'password' : 'text'}
                   value={form[k]}
                   onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
                   className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
@@ -236,12 +257,45 @@ function TabOrganizaciones() {
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-500 block mb-1">Días de prueba</label>
-              <select value={form.dias_prueba} onChange={e => setForm(f => ({ ...f, dias_prueba: e.target.value }))}
+              <label className="text-xs font-medium text-gray-500 block mb-1">Tipo de licencia</label>
+              <select value={form.tipo_licencia} onChange={e => setForm(f => ({ ...f, tipo_licencia: e.target.value }))}
                 className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm">
-                {[7, 14, 30, 60].map(d => <option key={d} value={d}>{d} días</option>)}
+                <option value="suscripcion">Suscripción (mensual)</option>
+                <option value="perpetua">Licencia perpetua (pago único)</option>
               </select>
             </div>
+            {form.tipo_licencia === 'perpetua' ? (
+              <>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">Pago único (₲)</label>
+                  <input type="number" value={form.monto_pago_unico}
+                    onChange={e => setForm(f => ({ ...f, monto_pago_unico: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">Mantenimiento anual (₲, opcional)</label>
+                  <input type="number" value={form.monto_mantenimiento_anual}
+                    onChange={e => setForm(f => ({ ...f, monto_mantenimiento_anual: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">Precio mensual (₲)</label>
+                  <input type="number" value={form.monto_mensual}
+                    onChange={e => setForm(f => ({ ...f, monto_mensual: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">Días de prueba</label>
+                  <select value={form.dias_prueba} onChange={e => setForm(f => ({ ...f, dias_prueba: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm">
+                    {[7, 14, 30, 60].map(d => <option key={d} value={d}>{d} días</option>)}
+                  </select>
+                </div>
+              </>
+            )}
           </div>
           {formErr && <p className="text-xs text-red-600">{formErr}</p>}
           <div className="flex gap-2">
@@ -263,14 +317,14 @@ function TabOrganizaciones() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 text-left">
-              {['Organización', 'Rubro', 'Plan', 'Usuarios', 'MRR', 'Vence', 'Estado', ''].map(h => (
+              {['Organización', 'Rubro', 'Plan', 'Licencia', 'Usuarios', 'MRR / Pago único', 'Vence', 'Estado', ''].map(h => (
                 <th key={h} className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
             {isLoading && Array.from({ length: 4 }).map((_, i) => (
-              <tr key={i}>{Array.from({ length: 8 }).map((_, j) => (
+              <tr key={i}>{Array.from({ length: 9 }).map((_, j) => (
                 <td key={j} className="px-4 py-3"><div className="h-4 bg-gray-100 rounded animate-pulse" /></td>
               ))}</tr>
             ))}
@@ -295,8 +349,17 @@ function TabOrganizaciones() {
                       {org.plan}
                     </span>
                   </td>
+                  <td className="px-4 py-3">
+                    <span className={clsx('text-xs font-medium px-2 py-0.5 rounded-full', TIPO_BADGE[org.tipo_licencia] ?? 'bg-gray-100 text-gray-600')}>
+                      {org.tipo_licencia === 'perpetua' ? 'Perpetua' : 'Suscripción'}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-gray-600">{org.total_usuarios}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-gray-700">{org.mrr ? gs(org.mrr) : '—'}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-gray-700">
+                    {org.tipo_licencia === 'perpetua'
+                      ? (org.monto_pago_unico ? gs(org.monto_pago_unico) : '—')
+                      : (org.mrr ? gs(org.mrr) : '—')}
+                  </td>
                   <td className="px-4 py-3 text-xs text-gray-500">{fmtDate(org.fecha_vencimiento)}</td>
                   <td className="px-4 py-3">
                     <span className={clsx('text-xs font-medium px-2 py-0.5 rounded-full', ESTADO_BADGE[org.estado] ?? 'bg-gray-100 text-gray-500')}>
@@ -321,7 +384,7 @@ function TabOrganizaciones() {
                 </tr>
                 {expandedId === org.id && (
                   <tr className="bg-indigo-50/30">
-                    <td colSpan={8} className="px-6 py-3">
+                    <td colSpan={9} className="px-6 py-3">
                       <div className="flex items-center gap-3 flex-wrap">
                         <button
                           onClick={() => toggle.mutate(org.id)}
@@ -353,7 +416,7 @@ function TabOrganizaciones() {
               </Fragment>
             ))}
             {!isLoading && orgs.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-gray-400">Sin organizaciones</td></tr>
+              <tr><td colSpan={9} className="px-4 py-10 text-center text-sm text-gray-400">Sin organizaciones</td></tr>
             )}
           </tbody>
         </table>
@@ -370,17 +433,31 @@ function TabVencimientos() {
   const [extendiendo, setExtendiendo] = useState<number | null>(null)
   const [diasExt, setDiasExt] = useState(30)
   const [monto, setMonto] = useState('')
+  const [syncMsg, setSyncMsg] = useState('')
 
   const { data: vencimientos = [], isLoading } = useQuery<Vencimiento[]>({
     queryKey: ['admin-vencimientos', dias],
     queryFn: () => apiClient.get(`/admin/vencimientos?dias=${dias}`).then(r => r.data),
   })
 
+  const sincronizar = useMutation({
+    mutationFn: () => apiClient.post('/admin/sincronizar-vencimientos').then(r => r.data),
+    onSuccess: (data: { suscripciones_marcadas_vencidas: number; organizaciones_suspendidas: number }) => {
+      qc.invalidateQueries({ queryKey: ['admin-vencimientos'] })
+      qc.invalidateQueries({ queryKey: ['admin-orgs'] })
+      qc.invalidateQueries({ queryKey: ['admin-stats'] })
+      setSyncMsg(`${data.suscripciones_marcadas_vencidas} marcadas vencidas · ${data.organizaciones_suspendidas} suspendidas`)
+      setTimeout(() => setSyncMsg(''), 5000)
+    },
+  })
+
   const extender = useMutation({
-    mutationFn: (orgId: number) => apiClient.post(`/admin/organizaciones/${orgId}/extender`, {
-      dias: diasExt,
-      monto_mensual: monto ? Number(monto) : null,
-    }),
+    mutationFn: ({ orgId, esPerpetua }: { orgId: number; esPerpetua: boolean }) =>
+      apiClient.post(`/admin/organizaciones/${orgId}/extender`, {
+        dias: diasExt,
+        monto_mensual: esPerpetua ? null : (monto ? Number(monto) : null),
+        monto_mantenimiento_anual: esPerpetua ? (monto ? Number(monto) : null) : null,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-vencimientos'] })
       qc.invalidateQueries({ queryKey: ['admin-orgs'] })
@@ -391,12 +468,23 @@ function TabVencimientos() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <p className="text-sm text-gray-500">{vencimientos.length} suscripciones</p>
-        <select value={dias} onChange={e => setDias(Number(e.target.value))}
-          className="text-sm border border-gray-200 rounded-xl px-3 py-2 text-gray-700">
-          {[7, 14, 30, 60, 90].map(d => <option key={d} value={d}>Próximos {d} días</option>)}
-        </select>
+        <div className="flex items-center gap-2">
+          {syncMsg && <span className="text-xs text-gray-500">{syncMsg}</span>}
+          <button
+            onClick={() => sincronizar.mutate()}
+            disabled={sincronizar.isPending}
+            title="Marca vencida la suscripción/mantenimiento de orgs cuya fecha ya pasó, y suspende las que superaron el período de gracia"
+            className="flex items-center gap-1 text-xs border border-gray-200 rounded-xl px-3 py-2 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+          >
+            <Clock size={12} /> {sincronizar.isPending ? 'Sincronizando...' : 'Sincronizar vencimientos'}
+          </button>
+          <select value={dias} onChange={e => setDias(Number(e.target.value))}
+            className="text-sm border border-gray-200 rounded-xl px-3 py-2 text-gray-700">
+            {[7, 14, 30, 60, 90].map(d => <option key={d} value={d}>Próximos {d} días</option>)}
+          </select>
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -410,6 +498,9 @@ function TabVencimientos() {
                   <p className="font-medium text-gray-800 text-sm">{v.org_nombre}</p>
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', RUBRO_BADGE[v.rubro] ?? 'bg-gray-100')}>{v.rubro}</span>
+                    <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', TIPO_BADGE[v.tipo_licencia] ?? 'bg-gray-100')}>
+                      {v.tipo_licencia === 'perpetua' ? 'Mantenimiento' : 'Suscripción'}
+                    </span>
                     <span className="text-xs text-gray-500">{v.plan}</span>
                     <span className="text-xs text-gray-400">{fmtDate(v.fecha_vencimiento)}</span>
                   </div>
@@ -417,7 +508,11 @@ function TabVencimientos() {
               </div>
               <div className="flex items-center gap-3 shrink-0">
                 {diasBadge(v.dias_restantes)}
-                <span className="text-xs font-mono text-gray-700">{v.monto_mensual ? gs(v.monto_mensual) : '—'}</span>
+                <span className="text-xs font-mono text-gray-700">
+                  {v.tipo_licencia === 'perpetua'
+                    ? (v.monto_mantenimiento_anual ? gs(v.monto_mantenimiento_anual) : '—')
+                    : (v.monto_mensual ? gs(v.monto_mensual) : '—')}
+                </span>
                 {extendiendo === v.org_id ? (
                   <div className="flex items-center gap-1">
                     <select value={diasExt} onChange={e => setDiasExt(Number(e.target.value))}
@@ -432,7 +527,7 @@ function TabVencimientos() {
                       className="w-24 text-xs border border-gray-200 rounded-lg px-2 py-1 font-mono"
                     />
                     <button
-                      onClick={() => extender.mutate(v.org_id)}
+                      onClick={() => extender.mutate({ orgId: v.org_id, esPerpetua: v.tipo_licencia === 'perpetua' })}
                       disabled={extender.isPending}
                       className="text-xs bg-indigo-600 text-white px-2 py-1 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
                     >
@@ -444,10 +539,15 @@ function TabVencimientos() {
                   </div>
                 ) : (
                   <button
-                    onClick={() => { setExtendiendo(v.org_id); setMonto(v.monto_mensual ? String(v.monto_mensual) : '') }}
+                    onClick={() => {
+                      setExtendiendo(v.org_id)
+                      setDiasExt(v.tipo_licencia === 'perpetua' ? 365 : 30)
+                      const actual = v.tipo_licencia === 'perpetua' ? v.monto_mantenimiento_anual : v.monto_mensual
+                      setMonto(actual ? String(actual) : '')
+                    }}
                     className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
                   >
-                    Extender →
+                    {v.tipo_licencia === 'perpetua' ? 'Renovar →' : 'Extender →'}
                   </button>
                 )}
               </div>
@@ -475,15 +575,21 @@ function TabPagos() {
     org_id: '',
     dias: '30',
     monto_mensual: '',
+    monto_mantenimiento_anual: '',
     metodo_pago: 'transferencia',
     referencia: '',
   })
   const [success, setSuccess] = useState(false)
 
+  const selOrg = orgs.find(o => String(o.id) === form.org_id)
+  const esPerpetua = selOrg?.tipo_licencia === 'perpetua'
+  const sinMantenimiento = esPerpetua && !selOrg?.fecha_vencimiento
+
   const extender = useMutation({
     mutationFn: () => apiClient.post(`/admin/organizaciones/${form.org_id}/extender`, {
       dias: Number(form.dias),
-      monto_mensual: form.monto_mensual ? Number(form.monto_mensual) : null,
+      monto_mensual: esPerpetua ? null : (form.monto_mensual ? Number(form.monto_mensual) : null),
+      monto_mantenimiento_anual: esPerpetua ? (form.monto_mantenimiento_anual ? Number(form.monto_mantenimiento_anual) : null) : null,
       metodo_pago: form.metodo_pago,
       referencia: form.referencia || null,
     }),
@@ -498,14 +604,20 @@ function TabPagos() {
 
   function handleOrgChange(id: string) {
     const org = orgs.find(o => String(o.id) === id)
-    setForm(f => ({ ...f, org_id: id, monto_mensual: org?.mrr ? String(org.mrr) : f.monto_mensual }))
+    setForm(f => ({
+      ...f,
+      org_id: id,
+      monto_mensual: org?.mrr ? String(org.mrr) : f.monto_mensual,
+      monto_mantenimiento_anual: org?.monto_mantenimiento_anual ? String(org.monto_mantenimiento_anual) : f.monto_mantenimiento_anual,
+      dias: org?.tipo_licencia === 'perpetua' ? '365' : f.dias,
+    }))
   }
-
-  const selOrg = orgs.find(o => String(o.id) === form.org_id)
 
   return (
     <div className="max-w-lg space-y-4">
-      <p className="text-sm text-gray-600">Registrá un pago y extendé la suscripción de una organización.</p>
+      <p className="text-sm text-gray-600">
+        {esPerpetua ? 'Registrá el cobro de mantenimiento anual de una licencia perpetua.' : 'Registrá un pago y extendé la suscripción de una organización.'}
+      </p>
 
       <div className="bg-white rounded-2xl border border-gray-100 p-6 space-y-4">
         <div>
@@ -513,7 +625,7 @@ function TabPagos() {
           <select value={form.org_id} onChange={e => handleOrgChange(e.target.value)}
             className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm">
             <option value="">Seleccioná una organización...</option>
-            {orgs.map(o => <option key={o.id} value={o.id}>{o.nombre} — {o.plan}</option>)}
+            {orgs.map(o => <option key={o.id} value={o.id}>{o.nombre} — {o.plan} {o.tipo_licencia === 'perpetua' ? '(perpetua)' : ''}</option>)}
           </select>
           {selOrg && (
             <p className="text-xs text-gray-400 mt-1">
@@ -522,10 +634,25 @@ function TabPagos() {
           )}
         </div>
 
+        {sinMantenimiento && (
+          <div className="flex items-center gap-2 text-amber-700 bg-amber-50 rounded-xl px-4 py-3 text-xs">
+            <AlertTriangle size={14} className="shrink-0" />
+            Esta organización tiene licencia perpetua sin mantenimiento recurrente — no vence ni requiere renovación.
+            Completá el formulario solo si vas a activarle un mantenimiento anual desde ahora.
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="text-xs font-medium text-gray-500 block mb-1.5">Monto cobrado (₲)</label>
-            <input type="number" value={form.monto_mensual} onChange={e => setForm(f => ({ ...f, monto_mensual: e.target.value }))}
+            <label className="text-xs font-medium text-gray-500 block mb-1.5">
+              {esPerpetua ? 'Mantenimiento cobrado (₲)' : 'Monto cobrado (₲)'}
+            </label>
+            <input
+              type="number"
+              value={esPerpetua ? form.monto_mantenimiento_anual : form.monto_mensual}
+              onChange={e => setForm(f => esPerpetua
+                ? { ...f, monto_mantenimiento_anual: e.target.value }
+                : { ...f, monto_mensual: e.target.value })}
               className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-mono" placeholder="490000" />
           </div>
           <div>
@@ -555,7 +682,7 @@ function TabPagos() {
 
         {success && (
           <div className="flex items-center gap-2 text-green-700 bg-green-50 rounded-xl px-4 py-3 text-sm">
-            <Check size={14} /> Pago registrado y suscripción extendida correctamente.
+            <Check size={14} /> Pago registrado {esPerpetua ? 'y mantenimiento renovado' : 'y suscripción extendida'} correctamente.
           </div>
         )}
         {extender.isError && <p className="text-sm text-red-600">Error al registrar el pago.</p>}
@@ -565,7 +692,7 @@ function TabPagos() {
           disabled={!form.org_id || extender.isPending}
           className="w-full py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors text-sm"
         >
-          {extender.isPending ? 'Procesando...' : 'Registrar pago y extender suscripción'}
+          {extender.isPending ? 'Procesando...' : esPerpetua ? 'Registrar pago y renovar mantenimiento' : 'Registrar pago y extender suscripción'}
         </button>
       </div>
     </div>

@@ -21,6 +21,9 @@ apiClient.interceptors.response.use(
       localStorage.removeItem('refresh_token')
       window.location.href = '/login'
     }
+    if (error.response?.status === 402 && !window.location.pathname.startsWith('/configuracion')) {
+      window.location.href = '/configuracion?vencido=1'
+    }
     return Promise.reject(error)
   },
 )

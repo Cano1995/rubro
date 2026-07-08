@@ -1,10 +1,21 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Settings, Building2, CreditCard, User } from 'lucide-react'
+import { Settings, Building2, CreditCard, User, AlertTriangle } from 'lucide-react'
 import { orgApi } from '../api/organizacion'
 import { useToast } from '../components/ui/Toast'
 import { InputField } from '../components/ui/FormField'
 import { useAuth } from '../hooks/useAuth'
+import { useSuscripcion } from '../hooks/useSuscripcion'
+
+function gs(n: number) {
+  return `₲${Math.round(n).toLocaleString('es-PY')}`
+}
+
+function fmtDate(d: string | null) {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('es-PY')
+}
 
 const RUBRO_LABEL: Record<string, string> = {
   veterinaria: '🐾 Veterinaria',
@@ -22,6 +33,8 @@ export default function Configuracion() {
   const qc = useQueryClient()
   const { user } = useAuth()
   const { toast } = useToast()
+  const [searchParams] = useSearchParams()
+  const vencido = searchParams.get('vencido') === '1'
 
   const { data: org } = useQuery({
     queryKey: ['organizacion'],
@@ -38,9 +51,20 @@ export default function Configuracion() {
   })
 
   const plan = org?.plan ? PLAN_INFO[org.plan] : null
+  const { suscripcion } = useSuscripcion()
+  const esPerpetua = suscripcion?.tipo === 'perpetua'
 
   return (
     <div className="max-w-2xl space-y-6">
+      {vencido && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+          <AlertTriangle size={16} className="shrink-0" />
+          <p>
+            Tu {esPerpetua ? 'mantenimiento anual' : 'suscripción'} está vencida y algunas funciones quedaron
+            bloqueadas. Renová para recuperar el acceso completo.
+          </p>
+        </div>
+      )}
       <div className="flex items-center gap-2">
         <Settings className="text-gray-500" size={20} />
         <h1 className="text-xl font-bold text-gray-800">Configuración</h1>
@@ -89,6 +113,22 @@ export default function Configuracion() {
               <button className="px-4 py-2 bg-amber-500 text-white rounded-lg text-sm font-medium hover:bg-amber-600 shrink-0">
                 Mejorar plan
               </button>
+            )}
+          </div>
+        )}
+        {suscripcion && (
+          <div className="mt-4 pt-4 border-t border-gray-100 text-sm text-gray-600 space-y-1">
+            {esPerpetua ? (
+              <>
+                <p>Licencia perpetua — pago único{suscripcion.monto_pago_unico ? `: ${gs(suscripcion.monto_pago_unico)}` : ''}.</p>
+                {suscripcion.monto_mantenimiento_anual ? (
+                  <p>Mantenimiento anual: {gs(suscripcion.monto_mantenimiento_anual)} · próxima renovación {fmtDate(suscripcion.fecha_vencimiento)}.</p>
+                ) : (
+                  <p>Sin mantenimiento recurrente — esta licencia no vence.</p>
+                )}
+              </>
+            ) : (
+              <p>Suscripción mensual{suscripcion.monto_mensual ? `: ${gs(suscripcion.monto_mensual)}` : ''} · próximo vencimiento {fmtDate(suscripcion.fecha_vencimiento)}.</p>
             )}
           </div>
         )}
