@@ -1,14 +1,14 @@
 """Agrega tipo de licencia (suscripcion / perpetua) a suscripciones
 
-Revision ID: 002_tipo_licencia
-Revises: 001_initial
+Revision ID: 007_tipo_licencia
+Revises: 006_fac_electronica_flag
 Create Date: 2026-07-08
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = '002_tipo_licencia'
-down_revision = '001_initial'
+revision = '007_tipo_licencia'
+down_revision = '006_fac_electronica_flag'
 branch_labels = None
 depends_on = None
 

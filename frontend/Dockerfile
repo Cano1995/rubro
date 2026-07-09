@@ -3,6 +3,12 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
+
+# Vite hornea las env vars en el bundle en build time — Railway inyecta las
+# Service Variables como build args cuando coinciden con un ARG declarado.
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
+
 RUN npm run build
 
 FROM nginx:alpine
