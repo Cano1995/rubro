@@ -6,6 +6,7 @@ Create Date: 2026-06-29
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import ENUM as PGEnum
 
 revision = '002_facturacion'
 down_revision = '001_initial'
@@ -37,7 +38,7 @@ def upgrade() -> None:
             sa.Column('organizacion_id', sa.Integer(), sa.ForeignKey('organizaciones.id'), unique=True, nullable=False),
             sa.Column('prefijo', sa.String(10), server_default='FAC', nullable=False),
             sa.Column('siguiente_numero', sa.Integer(), server_default='1', nullable=False),
-            sa.Column('tasa_iva_default', sa.Enum('IVA_10', 'IVA_5', 'EXENTO', name='tasaiva', create_type=False), server_default='IVA_10', nullable=False),
+            sa.Column('tasa_iva_default', PGEnum('IVA_10', 'IVA_5', 'EXENTO', name='tasaiva', create_type=False), server_default='IVA_10', nullable=False),
             sa.Column('precio_incluye_iva', sa.Boolean(), server_default='true', nullable=False),
             sa.Column('ruc', sa.String(20), nullable=True),
             sa.Column('razon_social', sa.String(200), nullable=True),
@@ -68,13 +69,13 @@ def upgrade() -> None:
             sa.Column('numero', sa.String(30), nullable=False),
             sa.Column('fecha', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
             sa.Column('fecha_vencimiento', sa.DateTime(timezone=True), nullable=True),
-            sa.Column('condicion', sa.Enum('contado', 'credito', name='condicionventa', create_type=False), server_default='contado', nullable=False),
+            sa.Column('condicion', PGEnum('contado', 'credito', name='condicionventa', create_type=False), server_default='contado', nullable=False),
             sa.Column('total_base', sa.Numeric(12, 2), server_default='0', nullable=False),
             sa.Column('total_iva10', sa.Numeric(12, 2), server_default='0', nullable=False),
             sa.Column('total_iva5', sa.Numeric(12, 2), server_default='0', nullable=False),
             sa.Column('total_exento', sa.Numeric(12, 2), server_default='0', nullable=False),
             sa.Column('total_general', sa.Numeric(12, 2), server_default='0', nullable=False),
-            sa.Column('estado', sa.Enum('pendiente', 'pagada', 'cancelada', 'vencida', name='estadofactura', create_type=False), server_default='pendiente', nullable=False),
+            sa.Column('estado', PGEnum('pendiente', 'pagada', 'cancelada', 'vencida', name='estadofactura', create_type=False), server_default='pendiente', nullable=False),
             sa.Column('notas', sa.Text(), nullable=True),
             sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
             sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
@@ -87,7 +88,7 @@ def upgrade() -> None:
             sa.Column('descripcion', sa.String(300), nullable=False),
             sa.Column('cantidad', sa.Numeric(10, 2), nullable=False),
             sa.Column('precio_unitario', sa.Numeric(12, 2), nullable=False),
-            sa.Column('tasa_iva', sa.Enum('IVA_10', 'IVA_5', 'EXENTO', name='tasaiva', create_type=False), server_default='IVA_10', nullable=False),
+            sa.Column('tasa_iva', PGEnum('IVA_10', 'IVA_5', 'EXENTO', name='tasaiva', create_type=False), server_default='IVA_10', nullable=False),
             sa.Column('precio_incluye_iva', sa.Boolean(), server_default='true', nullable=False),
             sa.Column('subtotal', sa.Numeric(12, 2), nullable=False),
             sa.Column('monto_iva', sa.Numeric(12, 2), nullable=False),
