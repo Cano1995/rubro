@@ -9,6 +9,7 @@ from app.models.suscripcion import Suscripcion, EstadoSuscripcion, TipoLicencia
 from app.models.organizacion import Organizacion
 from app.models.usuario import Usuario, RolUsuario
 from app.core.email import send_email, html_alerta_suscripcion
+from app.core.config import settings
 
 router = APIRouter(prefix="/suscripciones", tags=["suscripciones"])
 
@@ -86,7 +87,7 @@ async def enviar_alertas_vencimiento(
             org_nombre=org.nombre,
             dias=dias,
             plan=sub.plan,
-            frontend_url="https://rubro.app",
+            frontend_url=settings.FRONTEND_URL,
             tipo=sub.tipo.value if hasattr(sub.tipo, "value") else sub.tipo,
         )
         concepto = "mantenimiento anual" if sub.tipo == TipoLicencia.perpetua else "suscripción"

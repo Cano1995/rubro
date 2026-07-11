@@ -14,14 +14,22 @@ depends_on = None
 
 
 def upgrade() -> None:
+    insp = sa.inspect(op.get_bind())
+    existentes = {c["name"] for c in insp.get_columns('fac_config')}
+
     # Numeración paraguaya XXX-YYY-NNNNNNN (reemplaza prefijo)
-    op.add_column('fac_config', sa.Column('codigo_establecimiento', sa.String(3), server_default='001', nullable=False))
-    op.add_column('fac_config', sa.Column('punto_expedicion', sa.String(3), server_default='001', nullable=False))
+    if 'codigo_establecimiento' not in existentes:
+        op.add_column('fac_config', sa.Column('codigo_establecimiento', sa.String(3), server_default='001', nullable=False))
+    if 'punto_expedicion' not in existentes:
+        op.add_column('fac_config', sa.Column('punto_expedicion', sa.String(3), server_default='001', nullable=False))
 
     # Timbrado SET
-    op.add_column('fac_config', sa.Column('timbrado', sa.String(20), nullable=True))
-    op.add_column('fac_config', sa.Column('timbrado_vigencia_desde', sa.DateTime(timezone=True), nullable=True))
-    op.add_column('fac_config', sa.Column('timbrado_vigencia_hasta', sa.DateTime(timezone=True), nullable=True))
+    if 'timbrado' not in existentes:
+        op.add_column('fac_config', sa.Column('timbrado', sa.String(20), nullable=True))
+    if 'timbrado_vigencia_desde' not in existentes:
+        op.add_column('fac_config', sa.Column('timbrado_vigencia_desde', sa.DateTime(timezone=True), nullable=True))
+    if 'timbrado_vigencia_hasta' not in existentes:
+        op.add_column('fac_config', sa.Column('timbrado_vigencia_hasta', sa.DateTime(timezone=True), nullable=True))
 
     # El campo prefijo queda deprecated pero se mantiene para no romper columnas existentes
     # Se puede eliminar en una migración futura cuando todas las DBs hayan migrado

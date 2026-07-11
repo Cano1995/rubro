@@ -14,14 +14,23 @@ depends_on = None
 
 
 def upgrade() -> None:
+    insp = sa.inspect(op.get_bind())
+    cols_config = {c["name"] for c in insp.get_columns('fac_config')}
+    cols_facturas = {c["name"] for c in insp.get_columns('fac_facturas')}
+
     # Conexión a elec-cano por organización
-    op.add_column('fac_config', sa.Column('elec_url', sa.String(500), nullable=True))
-    op.add_column('fac_config', sa.Column('elec_api_key', sa.String(200), nullable=True))
+    if 'elec_url' not in cols_config:
+        op.add_column('fac_config', sa.Column('elec_url', sa.String(500), nullable=True))
+    if 'elec_api_key' not in cols_config:
+        op.add_column('fac_config', sa.Column('elec_api_key', sa.String(200), nullable=True))
 
     # Resultado de la emisión electrónica por factura
-    op.add_column('fac_facturas', sa.Column('cdc', sa.String(44), nullable=True))
-    op.add_column('fac_facturas', sa.Column('qr_base64', sa.Text(), nullable=True))
-    op.add_column('fac_facturas', sa.Column('estado_sifen', sa.String(20), nullable=True))
+    if 'cdc' not in cols_facturas:
+        op.add_column('fac_facturas', sa.Column('cdc', sa.String(44), nullable=True))
+    if 'qr_base64' not in cols_facturas:
+        op.add_column('fac_facturas', sa.Column('qr_base64', sa.Text(), nullable=True))
+    if 'estado_sifen' not in cols_facturas:
+        op.add_column('fac_facturas', sa.Column('estado_sifen', sa.String(20), nullable=True))
 
 
 def downgrade() -> None:

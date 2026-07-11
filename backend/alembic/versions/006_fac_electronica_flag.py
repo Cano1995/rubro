@@ -14,7 +14,11 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column('fac_config', sa.Column('factura_electronica_activa', sa.Boolean(), nullable=False, server_default='false'))
+    insp = sa.inspect(op.get_bind())
+    existentes = {c["name"] for c in insp.get_columns('fac_config')}
+
+    if 'factura_electronica_activa' not in existentes:
+        op.add_column('fac_config', sa.Column('factura_electronica_activa', sa.Boolean(), nullable=False, server_default='false'))
 
 
 def downgrade() -> None:

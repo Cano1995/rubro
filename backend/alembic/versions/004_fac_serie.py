@@ -14,8 +14,12 @@ depends_on = None
 
 
 def upgrade() -> None:
+    insp = sa.inspect(op.get_bind())
+    existentes = {c["name"] for c in insp.get_columns('fac_config')}
+
     # Serie alfanumérica de 2 chars (NULL = sin serie, activo desde 9999999+1)
-    op.add_column('fac_config', sa.Column('serie', sa.String(2), nullable=True))
+    if 'serie' not in existentes:
+        op.add_column('fac_config', sa.Column('serie', sa.String(2), nullable=True))
 
 
 def downgrade() -> None:
